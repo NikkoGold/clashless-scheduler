@@ -10,15 +10,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.13"]
+        python: ["3.11", "3.14"]
     runs-on: ${{ matrix.os }}
     env:
       # The suite must pass offline: no keys, no real LLM calls.
       LLM_ENABLED: "false"
       LLM_PROVIDER: none
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
