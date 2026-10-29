@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scheduler"
+version = "0.1.0"
+description = "Class scheduler: plain-language preferences in, conflict-free timetables out (CP-SAT)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2",
+    "ortools",
+    "python-dotenv",
+    "httpx",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai"]
+anthropic = ["anthropic"]
+openai = ["openai"]
+dev = ["pytest", "pyyaml", "hypothesis"]
+
+[project.scripts]
+scheduler = "scheduler.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["scheduler*"]
+
+[tool.setuptools.package-data]
+"scheduler.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: longer solver runs; still run by default",
+    "live: real LLM API calls; skipped unless RUN_LIVE_LLM=1",
+]

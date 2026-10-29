@@ -1,0 +1,1 @@
+"""PreferenceParser protocol and ParseResult."""
