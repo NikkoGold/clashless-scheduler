@@ -38,7 +38,7 @@ scheduler/
       providers/            # gemini.py (default), anthropic.py, openai.py, ollama.py — each a small adapter
       router.py             # choose LLM or rules from config, budget and errors; caching
     config.py               # reads .env
-    cli.py                  # python -m scheduler courses.json "prefs..." [--review] [--pick 5:CS101,CS102,...] [--parser rules|llm] [--top 5] [--export out.xlsx]
+    cli.py                  # python -m scheduler courses.json "prefs..." [--review] [--pick 5:CS101,CS102,...] [--no-required] [--parser rules|llm] [--top 5] [--export out.xlsx]
     web/
       app.py                # FastAPI: /api/catalog, /api/parse, /api/solve; serves static files
       static/index.html, app.js, style.css   # upload, preference box, constraint chips, weekly grid
@@ -51,11 +51,11 @@ scheduler/
   "term": "2026A",
   "courses": [
     {
-      "id": "CS101", "name": "Intro to CS", "credits": 4,
+      "id": "CS101", "name": "Intro to CS", "credits": 4, "required": true,
       "components": {
         "lecture": [
           {"group": "1", "instructor": "Cohen", "sessions": [{"day": "Sun", "start": "10:00", "end": "12:00", "room": "B-201"}]},
-          {"group": "2", "instructor": "Levi",  "mandatory": false, "sessions": [...]}
+          {"group": "2", "instructor": "Levi",  "attendance_required": false, "sessions": [...]}
         ],
         "lab": [
           {"group": "11", "parent": "1", "sessions": [...]},
@@ -70,17 +70,21 @@ scheduler/
 ```
 Rule: a valid schedule picks exactly one group from each component of each selected course. Component names are free text (for example lecture, tutorial or lab).
 
+Each course has an optional **`required`** field (default `false`) marking it as a degree requirement rather than an elective. It is the data-file form of `must_take`: `default_constraints(catalog)` turns each required course into a hard `must_take`, and the UI and CLI start from that list. **The solver never reads `required`**, only the `must_take` constraints, so the user can still drop a required course (picker toggle, review step, or `--no-required` in the CLI).
+
+All session times are **on the hour** (`"10:00"`, not `"10:30"`). The loader rejects anything else.
+
 The lab numbers follow the lecture they belong to (11 and 12 under lecture 1, 21 and 22 under lecture 2), and each lab records this in an optional `parent` field. **For now `parent` is only stored and displayed. Any lab can go with any lecture.**
 
 > **Future option (not in v1):** a `link_groups` setting, per course or global, that only allows labs whose `parent` matches the chosen lecture (lecture 1 → labs 1X). In the solver this is one constraint: `lab[g] ⇒ lecture[g.parent]`. The `parent` field is in the format now so adding this later won't change the format.
 
-Each group has an optional **`mandatory`** field (default `true`), meaning whether attendance is required. The format checks it and the UI shows a small "attendance optional" tag, but **v1 doesn't use it in solving or parsing**. Every group is still treated as clash-free. The field is there so the overlap feature below won't need a format change.
+Each group has an optional **`attendance_required`** field (default `true`), meaning whether you have to attend this class. It is unrelated to `required`/`must_take`, which are about taking the course at all. The format checks it and the UI shows a small "attendance optional" tag, but **v1 doesn't use it in solving or parsing**. Every group is still treated as clash-free. The field is there so the overlap feature below won't need a format change.
 
 Days are written `Sun`–`Sat`. **The week defaults to Sun–Fri**, so the calendar grid and the meaning of "every day" or "weekdays" in constraints are Sun–Fri. The week is set by an optional top-level `"week": ["Sun",…,"Fri"]` field.
 
 ## Constraint vocabulary (shared by both parsers)
 Each constraint has `kind`, parameters, `strength: hard | soft` and a `weight` from 1 to 10.
-- `must_take(course)`, `exclude_course(course)`, `take_n_of(courses, n)`. With `take_n_of`, the solver picks the best n courses out of the pool. If the pool has exactly n courses, all of them are required (the same as listing each one under `must_take`). If the pool has fewer than n courses, the app shows a clear error before solving.
+- `must_take(course)`, `exclude_course(course)`, `take_n_of(courses, n)`. With `take_n_of`, the solver picks the best n courses out of the pool. If the pool has exactly n courses, all of them are required (the same as listing each one under `must_take`). If the pool has fewer than n courses, the app shows a clear error before solving. **A course that is in neither a `must_take` nor a `take_n_of` pool is not scheduled.**
 - `no_class_before(time, days?)`, `no_class_after(time, days?)`
 - `day_off(day)`, `max_days(n)`, `max_hours_per_day(h)`
 - `free_block(day?, start, end)` — for example lunch
@@ -125,7 +129,7 @@ Provider SDKs are optional extras and are imported only when that provider is se
 ## Web UI
 A single page:
 1. Upload or select a courses JSON file.
-2. **Course picker** with a search box that filters as you type by course ID, name and instructor (filtered in the browser). Each course has a three-way toggle: *required* / *in pool* / *off*. Under the pool there's a "pick **N** of these" number box (default: the pool size, so picking 5 when 5 are pooled takes all 5).
+2. **Course picker** with a search box that filters as you type by course ID, name and instructor (filtered in the browser). Each course has a three-way toggle: *required* / *in pool* / *off*, defaulting from the course's `required` field. Under the pool there's a "pick **N** of these" number box (default: the pool size, so picking 5 when 5 are pooled takes all 5).
 3. Preferences text box, plus a ☐ **Review constraints before solving** checkbox and a **Schedule** button.
    - Checkbox on: shows editable constraint chips (toggle hard/soft, change the weight, delete) and an "add constraint" form, then a **Solve** button.
    - Checkbox off: goes straight to results.
@@ -136,19 +140,19 @@ A single page:
    - **JSON**: the raw solution, for debugging or reloading.
 
 ## Build order
-1. `models.py` and `catalog.py` with sample data, then the solver with hard no-overlap only, plus tests.
-2. All constraint kinds in the solver (hard and soft), top-K, and conflict explanation.
+1. `models.py` and `catalog.py` with sample data (validation, whole hours, merging), then the solver with no-overlap and `must_take` only, returning a top-K list from the start (never repeated, "only N possible" note; unranked until step 2), plus tests.
+2. All other constraint kinds in the solver (hard and soft), scoring and ranking, and conflict explanation.
 3. The rule parser and its tests (a set of test phrases with expected constraints).
 4. Provider adapters, the LLM parser, and the router with fallback, budget and cache.
-5. The CLI (`--review`, `--pick`, `--parser`).
+5. The CLI (`--review`, `--pick`, `--no-required`, `--parser`).
 6. The FastAPI endpoints and the frontend (search, pick-N, review toggle, unparsed highlighting).
 7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.
 
 ## Deferred / out of scope
 - `link_groups`: restricting labs to the matching lecture (format already supports it via `parent`).
-- **Allowed overlaps for optional-attendance classes**: a setting like "allow up to X overlaps" where a class with `mandatory: false` may clash with another class. Likely solver approach: only add the no-overlap constraint for a clashing pair if both groups are mandatory. For pairs with an optional group, add an `overlap[p]` boolean with `sum(overlap) ≤ X`, and a soft penalty so overlaps are only used when needed. It would also need a constraint kind (`max_overlaps(n)`), parser phrases ("I don't mind missing some lectures"), and overlap highlighting on the grid.
+- **Allowed overlaps for optional-attendance classes**: a setting like "allow up to X overlaps" where a class with `attendance_required: false` may clash with another class. Likely solver approach: only add the no-overlap constraint for a clashing pair if both groups have `attendance_required: true`. For pairs with an optional group, add an `overlap[p]` boolean with `sum(overlap) ≤ X`, and a soft penalty so overlaps are only used when needed. It would also need a constraint kind (`max_overlaps(n)`), parser phrases ("I don't mind missing some lectures"), and overlap highlighting on the grid.
 - Travel time between rooms and online vs in-person: intentionally ignored.
 
 ## Verification
-- `pytest`: catalog validation; the solver on small hand-made catalogs (known best answer, infeasible cases explained, top-K results all different; a catalog with only 2 valid schedules and K=5 returns exactly 2 with the "only 2 possible" note; back-to-back 10–12 then 12–14 is allowed; pick-N where the pool equals N takes all courses; any lab is allowed with any lecture; two labs at identical times merge into one option and don't produce duplicate-looking results; `mandatory: false` is accepted but doesn't change the solution); each RuleParser phrase test; the LLM parser using a mocked provider (valid output, invalid output followed by retry, and fallback on error).
-- Manual: `uvicorn scheduler.web.app:app --reload`, load `data/sample_courses.json`, enter "no classes before 10, fridays off, prefer Cohen, keep 12-13 free", parse once with `LLM_PROVIDER=gemini` and once with `none`, and check that the chips and schedules make sense.
+- `pytest`: catalog validation; the solver on small hand-made catalogs (known best answer, infeasible cases explained, top-K results all different; a catalog with only 2 valid schedules and K=5 returns exactly 2 with the "only 2 possible" note; back-to-back 10–12 then 12–14 is allowed; a group with several sessions is all-or-nothing, so a clash with only its second session rules out the whole group; pick-N where the pool equals N takes all courses; any lab is allowed with any lecture; two labs at identical times merge into one option and don't produce duplicate-looking results; `attendance_required: false` is accepted but doesn't change the solution; times not on the hour are rejected); each RuleParser phrase test; the LLM parser using a mocked provider (valid output, invalid output followed by retry, and fallback on error).
+- Manual: `uvicorn scheduler.web.app:app --reload`, load `data/sample_courses.json`, enter "no classes before 10, prefer Cohen, keep 12-13 free" (adding "fridays off" should report the ZGC conflict; see `data/README.md`), parse once with `LLM_PROVIDER=gemini` and once with `none`, and check that the chips and schedules make sense.

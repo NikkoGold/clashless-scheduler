@@ -1,0 +1,195 @@
+{
+  "term": "2026A",
+  "courses": [
+    {
+      "id": "ECP", "name": "Emergency Command Procedures", "credits": 2, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Adler", "sessions": [{"day": "Sun", "start": "14:00", "end": "16:00", "room": "A-101"}]}
+        ]
+      }
+    },
+    {
+      "id": "OLD", "name": "Officer Leadership Development", "credits": 4, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohen", "sessions": [
+            {"day": "Mon", "start": "10:00", "end": "12:00", "room": "A-201"},
+            {"day": "Wed", "start": "10:00", "end": "12:00", "room": "A-201"}
+          ]}
+        ],
+        "tutorial": [
+          {"group": "11", "parent": "1", "instructor": "Cohn", "sessions": [{"day": "Tue", "start": "08:00", "end": "09:00", "room": "B-104"}]},
+          {"group": "12", "parent": "1", "instructor": "Cohn", "sessions": [{"day": "Tue", "start": "14:00", "end": "15:00", "room": "B-104"}]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "instructor": "Brenner", "sessions": [{"day": "Wed", "start": "16:00", "end": "18:00", "room": "SIM-1"}]},
+          {"group": "12", "parent": "1", "instructor": "Brenner", "sessions": [{"day": "Thu", "start": "10:00", "end": "12:00", "room": "SIM-1"}]}
+        ]
+      }
+    },
+    {
+      "id": "PC2", "name": "Physical Conditioning II", "credits": 5, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Brenner", "sessions": [
+            {"day": "Sun", "start": "10:00", "end": "12:00", "room": "GYM"},
+            {"day": "Thu", "start": "10:00", "end": "12:00", "room": "GYM"}
+          ]},
+          {"group": "2", "instructor": "Dagan", "sessions": [
+            {"day": "Mon", "start": "08:00", "end": "10:00", "room": "GYM"},
+            {"day": "Wed", "start": "08:00", "end": "10:00", "room": "GYM"}
+          ]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "instructor": "Brenner", "sessions": [{"day": "Tue", "start": "16:00", "end": "18:00", "room": "GYM-A"}]},
+          {"group": "12", "parent": "1", "instructor": "Dagan", "sessions": [{"day": "Tue", "start": "16:00", "end": "18:00", "room": "GYM-B"}]},
+          {"group": "21", "parent": "2", "instructor": "Dagan", "sessions": [{"day": "Thu", "start": "08:00", "end": "10:00", "room": "GYM-A"}]}
+        ]
+      }
+    },
+    {
+      "id": "NAV2", "name": "Starship Navigation Principles II", "credits": 2, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohen", "sessions": [{"day": "Tue", "start": "10:00", "end": "12:00", "room": "A-201"}]},
+          {"group": "2", "instructor": "Erez", "sessions": [{"day": "Thu", "start": "14:00", "end": "16:00", "room": "A-202"}]}
+        ],
+        "tutorial": [
+          {"group": "11", "parent": "1", "sessions": [{"day": "Wed", "start": "10:00", "end": "11:00", "room": "B-110"}]},
+          {"group": "21", "parent": "2", "sessions": [{"day": "Sun", "start": "16:00", "end": "17:00", "room": "B-110"}]}
+        ]
+      }
+    },
+    {
+      "id": "SHO", "name": "Shuttlecraft Operation", "credits": 2, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Farkas", "sessions": [{"day": "Tue", "start": "12:00", "end": "14:00", "room": "HANGAR-2"}]},
+          {"group": "2", "instructor": "Farkas", "sessions": [{"day": "Wed", "start": "13:00", "end": "15:00", "room": "HANGAR-2"}]}
+        ]
+      }
+    },
+    {
+      "id": "ZGC", "name": "Zero-Gravity Combat Techniques", "credits": 2, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Brenner", "sessions": [{"day": "Fri", "start": "08:00", "end": "10:00", "room": "ZG-DECK"}]},
+          {"group": "2", "instructor": "Gal", "sessions": [{"day": "Fri", "start": "10:00", "end": "12:00", "room": "ZG-DECK"}]}
+        ]
+      }
+    },
+    {
+      "id": "GVO", "name": "Ground Vehicle Operation", "credits": 3, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Dagan", "sessions": [{"day": "Mon", "start": "14:00", "end": "16:00", "room": "A-105"}]},
+          {"group": "2", "instructor": "Gal", "sessions": [{"day": "Thu", "start": "12:00", "end": "14:00", "room": "A-105"}]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "sessions": [{"day": "Mon", "start": "16:00", "end": "18:00", "room": "MOTOR-POOL"}]},
+          {"group": "12", "parent": "1", "sessions": [{"day": "Sun", "start": "08:00", "end": "10:00", "room": "MOTOR-POOL"}]},
+          {"group": "21", "parent": "2", "sessions": [{"day": "Thu", "start": "14:00", "end": "16:00", "room": "MOTOR-POOL"}]},
+          {"group": "22", "parent": "2", "sessions": [{"day": "Sun", "start": "10:00", "end": "12:00", "room": "MOTOR-POOL"}]}
+        ]
+      }
+    },
+    {
+      "id": "GVM", "name": "Ground Vehicle Maintenance", "credits": 2, "required": true,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Gal", "sessions": [{"day": "Thu", "start": "16:00", "end": "18:00", "room": "MOTOR-POOL"}]},
+          {"group": "2", "instructor": "Cohn", "sessions": [{"day": "Mon", "start": "12:00", "end": "14:00", "room": "MOTOR-POOL"}]}
+        ]
+      }
+    },
+    {
+      "id": "APA", "name": "Advanced Pathology", "credits": 2,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohen", "sessions": [{"day": "Wed", "start": "10:00", "end": "12:00", "room": "MED-1"}]},
+          {"group": "2", "instructor": "Dagan", "attendance_required": false, "sessions": [{"day": "Thu", "start": "08:00", "end": "10:00", "room": "MED-1"}]}
+        ]
+      }
+    },
+    {
+      "id": "XPA", "name": "Xenopathology", "credits": 3,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Dagan", "sessions": [
+            {"day": "Sun", "start": "12:00", "end": "14:00", "room": "MED-2"},
+            {"day": "Tue", "start": "12:00", "end": "14:00", "room": "MED-2"}
+          ]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "sessions": [{"day": "Mon", "start": "08:00", "end": "10:00", "room": "MED-LAB"}]},
+          {"group": "12", "parent": "1", "sessions": [{"day": "Wed", "start": "14:00", "end": "16:00", "room": "MED-LAB"}]}
+        ]
+      }
+    },
+    {
+      "id": "HEP", "name": "High-Energy Particle Physics", "credits": 2,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Erez", "sessions": [{"day": "Tue", "start": "08:00", "end": "10:00", "room": "PHY-1"}]},
+          {"group": "2", "instructor": "Erez", "sessions": [{"day": "Thu", "start": "10:00", "end": "12:00", "room": "PHY-1"}]}
+        ]
+      }
+    },
+    {
+      "id": "HEW", "name": "High-Energy Weapons Systems", "credits": 2,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Gal", "sessions": [{"day": "Mon", "start": "12:00", "end": "14:00", "room": "ARMORY"}]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "sessions": [{"day": "Fri", "start": "08:00", "end": "10:00", "room": "RANGE"}]}
+        ]
+      }
+    },
+    {
+      "id": "SHM", "name": "Shuttlecraft Maintenance", "credits": 1,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Farkas", "sessions": [{"day": "Wed", "start": "12:00", "end": "14:00", "room": "HANGAR-1"}]}
+        ]
+      }
+    },
+    {
+      "id": "CCY", "name": "Computer Cybernetics", "credits": 2,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohn", "sessions": [{"day": "Sun", "start": "16:00", "end": "18:00", "room": "CMP-1"}]},
+          {"group": "2", "instructor": "Cohn", "sessions": [{"day": "Tue", "start": "14:00", "end": "16:00", "room": "CMP-1"}]}
+        ]
+      }
+    },
+    {
+      "id": "HELM2", "name": "Starship Helm Operations II", "credits": 2,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohen", "sessions": [{"day": "Thu", "start": "12:00", "end": "14:00", "room": "A-202"}]}
+        ],
+        "tutorial": [
+          {"group": "11", "parent": "1", "sessions": [{"day": "Mon", "start": "16:00", "end": "17:00", "room": "BRIDGE-SIM"}]},
+          {"group": "12", "parent": "1", "sessions": [{"day": "Fri", "start": "10:00", "end": "11:00", "room": "BRIDGE-SIM"}]}
+        ]
+      }
+    },
+    {
+      "id": "XBI", "name": "Xenobiology", "credits": 3,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Erez", "sessions": [
+            {"day": "Tue", "start": "10:00", "end": "12:00", "room": "BIO-1"},
+            {"day": "Thu", "start": "10:00", "end": "12:00", "room": "BIO-1"}
+          ]},
+          {"group": "2", "instructor": "Adler", "sessions": [
+            {"day": "Sun", "start": "16:00", "end": "18:00", "room": "BIO-1"},
+            {"day": "Wed", "start": "16:00", "end": "18:00", "room": "BIO-1"}
+          ]}
+        ]
+      }
+    }
+  ]
+}

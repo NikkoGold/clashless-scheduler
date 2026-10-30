@@ -9,7 +9,7 @@ Add at the **end of build step 2**, once all constraint kinds and top-K work. No
 
 ## Strategies (`tests/helpers/strategies.py`)
 - Catalogs: 1–4 courses, 1–2 components each, 1–3 groups per component, 1–2 sessions per group.
-- Times on a 30-minute grid between 08:00 and 20:00, length 1–3 hours, days drawn from the catalog's `week`.
+- Whole-hour times between 08:00 and 20:00, length 1–3 hours, days drawn from the catalog's `week`.
 - Deliberately duplicate a group's sessions some of the time so merging is exercised.
 - Constraints: 0–3 drawn from the kinds the solver supports, random hard/soft and weight 1–10.
 - Keep everything small enough for the oracle's size guard; `assume()` away the rest.

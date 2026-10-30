@@ -9,7 +9,7 @@ Read [conventions.md](conventions.md) first — it defines the test-first loop, 
 
 ## First use: create the helpers
 If `tests/helpers/` doesn't exist yet, create it before any other test:
-- `tests/helpers/catalog_builder.py` — `catalog(*courses, week=None, term="T")`, `course(id, name=None, credits=3, **components)`, `grp(group, *slots, instructor=None, mandatory=True, parent=None, room=None)`. A slot is a string like `"Sun 10-12"` or `"Mon 10:30-12:15"`. Returns a validated `Catalog` model (not raw dict) unless `raw=True`.
+- `tests/helpers/catalog_builder.py` — `catalog(*courses, week=None, term="T")`, `course(id, name=None, credits=3, **components)`, `grp(group, *slots, instructor=None, attendance_required=True, parent=None, room=None)`. A slot is a string like `"Sun 10-12"` (whole hours only, like the catalog). Returns a validated `Catalog` model (not raw dict) unless `raw=True`.
 - `tests/helpers/invariants.py` — `assert_valid_schedule(...)` and `assert_valid_results(...)` as specified in invariants.md.
 - `tests/helpers/oracle.py` — brute-force checker as specified in [oracle.md](oracle.md).
 - `tests/conftest.py` — registers markers, exposes the builders as fixtures only if that reads better; plain imports are fine.
@@ -26,17 +26,22 @@ cat = catalog(
 Each item below is its own test function with a descriptive name.
 
 Catalog / models (`test_catalog.py`):
-- valid catalog loads; missing/invalid fields give a readable error (bad day, end ≤ start, duplicate group id within a component, unknown `parent` is allowed but stored)
+- valid catalog loads; missing/invalid fields give a readable error (bad day, day outside `week`, end ≤ start, time not on the hour, unknown field, duplicate course id, duplicate group id within a component, a group's own sessions overlapping; unknown `parent` is allowed but stored)
 - `week` defaults to Sun–Fri; custom `week` is respected
-- `mandatory` defaults to true; `mandatory: false` accepted
+- `attendance_required` defaults to true; `attendance_required: false` accepted
+- `required` defaults to false; `default_constraints(catalog)` gives one hard `must_take` per required course
+- merging: identical session sets merge regardless of session order; different sets don't
 
-Solver (`test_solver_basic.py`, `test_solver_constraints.py`, `test_solver_topk.py`, `test_solver_infeasible.py`):
-- back-to-back 10–12 then 12–14 is allowed; 10–12 and 11:59–13 clash
+Solver (`test_solver_basic.py`, `test_solver_topk.py` in step 1; `test_solver_constraints.py`, `test_solver_infeasible.py` in step 2):
+- back-to-back 10–12 then 12–14 is allowed; 10–12 and 11–13 clash
+- only `must_take` courses (and, from step 2, `take_n_of` picks) are scheduled
+- a group with several sessions is all-or-nothing: e.g. lecture `grp("1", "Mon 10-12", "Wed 10-12")` vs another course's only group at `"Wed 11-13"` → lecture 1 is never chosen, and the other lecture group (with its sessions on other days) is picked; if lecture 1 is the only group, the result is infeasible
 - any lab may pair with any lecture (`parent` not enforced)
-- `mandatory: false` does not change the solution
+- `attendance_required: false` does not change the solution
 - groups with identical sessions merge into one option ("lab 11 or 12"); results never look identical on the grid; a merged option is scored by its best member and the result names which member to register for
 - catalog with exactly 2 feasible schedules and K=5 returns exactly 2 plus the "only 2 possible" note
-- top-K results are pairwise distinct and scores are non-improving by rank
+- top-K results are pairwise distinct (step 1); scores are non-improving by rank (step 2, once scoring exists)
+- the solver always returns a list, even for K=1; no solution → empty list
 - `take_n_of` with pool == n takes all; pool < n errors before solving
 - each hard constraint kind: a tiny case where it changes the result
 - each soft constraint kind: ranking changes and the breakdown records met/broken

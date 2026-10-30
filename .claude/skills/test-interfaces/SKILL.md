@@ -12,6 +12,7 @@ Call `main(argv)` directly and capture output with `capsys`; assert on exit code
 - Basic run prints K schedules; `--top N` changes the count.
 - "Only N possible" message when fewer than K exist.
 - `--pick 2:CS101,CS102,CS103` → exactly 2 of the pool chosen; pool < N → clear error, non-zero exit.
+- Courses with `"required": true` are scheduled by default (as `must_take`); `--no-required` drops them.
 - `--parser rules|llm` is honoured and the parser used is printed.
 - Unparsed fragments are printed as warnings.
 - Infeasible input prints the conflict explanation, non-zero exit.

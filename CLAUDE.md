@@ -21,7 +21,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 - `scheduler/solver.py`: builds the model, top-K enumeration, explains unsolvable cases, score breakdown.
 - `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (choosing a parser, fallback, budget, cache).
 - `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`).
-- `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--parser rules|llm] [--top 5] [--export out.xlsx]`.
+- `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--no-required] [--parser rules|llm] [--top 5] [--export out.xlsx]`.
 - `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
 
 ## Core rules (don't break these)
@@ -32,11 +32,14 @@ courses.json ──► catalog (Pydantic) ────────────�
 - **Top-K never repeats.** Each solution found is ruled out before solving again. Stop at K solutions or when there are none left, and report "only N possible". Groups with identical times are merged first, so no two results look the same on the grid.
 - **`take_n_of`**: if the pool has exactly n courses, take all of them. If it has fewer than n, show an error before solving.
 - The week defaults to **Sun–Fri** (it can be changed with the catalog's `week` field).
-- The `mandatory` field on groups is checked but **not used** in v1.
+- **Session times are whole hours.** The loader rejects `10:30`.
+- **`required` (course) is the data-file form of `must_take`.** `default_constraints(catalog)` turns each required course into a hard `must_take`; the solver never reads `required`. Courses in neither a `must_take` nor a `take_n_of` pool are not scheduled.
+- The `attendance_required` field on groups (default `true`; "do I have to attend") is checked but **not used** in v1. It's kept for the deferred `max_overlaps` feature.
+- `data/sample_courses.json` is hand-written (see `data/README.md`). Don't assert exact results against it.
 
 ## Not in v1 (don't build these unless asked)
 - `link_groups`: only allow labs whose `parent` matches the chosen lecture.
-- `max_overlaps(n)`: allow clashes with classes marked `mandatory: false`.
+- `max_overlaps(n)`: allow clashes with classes marked `attendance_required: false`.
 - `.ics` export, travel time, online vs in-person.
 
 ## Commands (Windows / PowerShell)
@@ -45,7 +48,7 @@ python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -e ".[dev,gemini]"        # other extras: anthropic, openai
 copy .env.example .env                 # then fill in the key; LLM_PROVIDER=none for offline
 uvicorn scheduler.web.app:app --reload
-python -m scheduler data/sample_courses.json "no classes before 10, fridays off"
+python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free"
 pytest -q                              # offline suite
 $env:RUN_LIVE_LLM=1; pytest -m live    # opt-in real-LLM eval
 ```
@@ -71,6 +74,7 @@ Key rules:
 - Name tests after behaviour (`test_back_to_back_classes_do_not_clash`), one behaviour per test, and parametrize variants. Use `tmp_path` for written files.
 - Solver behaviours that must have tests (from plan.md):
   - back-to-back 10–12 / 12–14 is allowed
+  - a multi-session group is all-or-nothing: a clash with only its second session rules out the whole group
   - a known best answer
   - an unsolvable case names the conflicting constraints
   - top-K results are all different
@@ -78,5 +82,5 @@ Key rules:
   - two labs at identical times merge into one option
   - pick-N where the pool equals N takes all courses
   - any lab can go with any lecture
-  - `mandatory: false` doesn't change the result
+  - `attendance_required: false` doesn't change the result
 - New constraint kinds or parser patterns need tests in the same change.
