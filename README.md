@@ -56,7 +56,8 @@ CLI options: `--review`, `--pick N:CS101,CS102,...`, `--no-required`, `--parser 
 }
 ```
 
-[data/sample_courses.json](data/sample_courses.json) is a full example.
+### Try it with the dummy dataset
+[data/sample_courses.json](data/sample_courses.json) is a default dataset to experiment with: 16 made-up courses (8 required, 8 electives) that show off clashes, merged labs, back-to-back classes and an unsolvable case. [data/README.md](data/README.md) explains what each course demonstrates and suggests phrases to try.
 
 ### How your schedule is built
 - **One group from each component.** For each course you take, you get exactly one lecture group, one lab group, and so on. Component names are free text (`lecture`, `tutorial`, `lab`, ...).
