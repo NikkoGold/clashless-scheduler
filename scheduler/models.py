@@ -5,7 +5,17 @@ These are the single source of truth for both parsers and the solver.
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    TypeAdapter,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 Day = Literal["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 DEFAULT_WEEK: list[Day] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri"]
@@ -118,15 +128,156 @@ class Catalog(_Strict):
 
 # ---- constraints ----
 
-class MustTake(_Strict):
-    kind: Literal["must_take"] = "must_take"
-    course: str
+def _clock_minutes(v):
+    minutes = parse_time(v) if isinstance(v, str) else v
+    if not isinstance(minutes, int) or isinstance(minutes, bool) or not 0 <= minutes < 24 * 60:
+        raise ValueError(f"time {v!r} should look like HH:MM")
+    return minutes
+
+
+# Minutes after midnight, written "HH:MM" in JSON. Unlike session times, these needn't be on the hour.
+ClockTime = Annotated[int, BeforeValidator(_clock_minutes), PlainSerializer(format_time, return_type=str)]
+
+
+class _ConstraintBase(_Strict):
     strength: Literal["hard", "soft"] = "hard"
     weight: int = Field(5, ge=1, le=10)
 
 
-# Becomes a discriminated union on `kind` as step 2 adds constraint kinds.
-Constraint = MustTake
+class MustTake(_ConstraintBase):
+    kind: Literal["must_take"] = "must_take"
+    course: str
+
+
+class ExcludeCourse(_ConstraintBase):
+    kind: Literal["exclude_course"] = "exclude_course"
+    course: str
+
+
+class TakeNOf(_ConstraintBase):
+    """Hard: exactly n from this pool. Soft: n is the target, and missing it costs a penalty.
+
+    Going over costs more than going under: see POOL_OVER_PENALTY in constraints.py.
+    Only courses in the pool count, so courses selected outside it don't affect n.
+    """
+    kind: Literal["take_n_of"] = "take_n_of"
+    courses: list[str] = Field(min_length=1)
+    n: int = Field(ge=1)
+
+    @field_validator("courses")
+    @classmethod
+    def _no_duplicates(cls, v: list[str]) -> list[str]:
+        if len(v) != len(set(v)):
+            raise ValueError("take_n_of: a course appears twice in the pool")
+        return v
+
+
+class NoClassBefore(_ConstraintBase):
+    kind: Literal["no_class_before"] = "no_class_before"
+    time: ClockTime
+    days: list[Day] | None = Field(None, min_length=1)  # None means every day
+
+
+class NoClassAfter(_ConstraintBase):
+    kind: Literal["no_class_after"] = "no_class_after"
+    time: ClockTime
+    days: list[Day] | None = Field(None, min_length=1)  # None means every day
+
+
+class DayOff(_ConstraintBase):
+    kind: Literal["day_off"] = "day_off"
+    day: Day
+
+
+class MaxDays(_ConstraintBase):
+    kind: Literal["max_days"] = "max_days"
+    n: int = Field(ge=1, le=7)
+
+
+class MaxHoursPerDay(_ConstraintBase):
+    kind: Literal["max_hours_per_day"] = "max_hours_per_day"
+    h: int = Field(ge=1)
+
+
+class FreeBlock(_ConstraintBase):
+    kind: Literal["free_block"] = "free_block"
+    day: Day | None = None  # None means every day
+    start: ClockTime
+    end: ClockTime
+
+    @model_validator(mode="after")
+    def _start_before_end(self):
+        if self.start >= self.end:
+            raise ValueError(f"free_block: start {format_time(self.start)} must be before end {format_time(self.end)}")
+        return self
+
+
+class MaxGap(_ConstraintBase):
+    kind: Literal["max_gap"] = "max_gap"
+    minutes: int = Field(ge=0)
+
+
+class Compact(_ConstraintBase):
+    """Minimise idle time. Soft only: the hard version of this is max_gap(0)."""
+    kind: Literal["compact"] = "compact"
+    strength: Literal["hard", "soft"] = "soft"
+
+    @field_validator("strength")
+    @classmethod
+    def _soft_only(cls, v: str) -> str:
+        if v != "soft":
+            raise ValueError("compact can only be soft; use max_gap with 0 minutes for a hard rule")
+        return v
+
+
+class PreferGroup(_ConstraintBase):
+    kind: Literal["prefer_group"] = "prefer_group"
+    course: str
+    component: str
+    group: str
+
+
+class AvoidGroup(_ConstraintBase):
+    kind: Literal["avoid_group"] = "avoid_group"
+    course: str
+    component: str
+    group: str
+
+
+class PreferInstructor(_ConstraintBase):
+    """Applies per component: only components this instructor teaches a group of are affected."""
+    kind: Literal["prefer_instructor"] = "prefer_instructor"
+    name: str
+
+
+class AvoidInstructor(_ConstraintBase):
+    kind: Literal["avoid_instructor"] = "avoid_instructor"
+    name: str
+
+
+class MinCredits(_ConstraintBase):
+    kind: Literal["min_credits"] = "min_credits"
+    n: float = Field(ge=0)
+
+
+class MaxCredits(_ConstraintBase):
+    kind: Literal["max_credits"] = "max_credits"
+    n: float = Field(ge=0)
+
+
+Constraint = Annotated[
+    MustTake | ExcludeCourse | TakeNOf
+    | NoClassBefore | NoClassAfter | DayOff | MaxDays | MaxHoursPerDay | FreeBlock | MaxGap | Compact
+    | PreferGroup | AvoidGroup | PreferInstructor | AvoidInstructor
+    | MinCredits | MaxCredits,
+    Field(discriminator="kind"),
+]
+
+_constraint_adapter = TypeAdapter(Constraint)
+
+
+def parse_constraint(data: dict) -> Constraint:
+    return _constraint_adapter.validate_python(data)
 
 
 # ---- solver results ----
@@ -144,16 +295,37 @@ class Option(BaseModel):
         return self.groups[0].sessions
 
 
+class TiedAlternative(BaseModel):
+    """Another member of the option at the same cost, which trades one broken preference for another."""
+    group: str
+    breaks: list[Constraint]  # broken by this group but not by the recommended one
+    instead_of: list[Constraint]  # broken by the recommended group but not by this one
+
+
 class Choice(BaseModel):
     course: str
     component: str
     option: Option
+    register_for: list[str]  # the option's best member(s); each gives exactly the schedule's breakdown
+    alternatives: list[TiedAlternative] = []
+    register_note: str | None = None  # plain-language version of the alternatives, if there are any
+
+
+class BreakdownItem(BaseModel):
+    """How one constraint, hard or soft, fared in a schedule."""
+    constraint: Constraint
+    met: bool
+    penalty: int  # unweighted
+    weighted: int
 
 
 class Schedule(BaseModel):
     choices: list[Choice]
+    penalty: int = 0  # total weighted soft penalty; lower is better
+    breakdown: list[BreakdownItem] = []  # one entry per constraint, so the user sees what they're accepting
 
 
 class SolveResult(BaseModel):
-    schedules: list[Schedule]
+    schedules: list[Schedule]  # best first
     note: str | None = None  # e.g. "Only 2 possible schedules match your constraints"
+    conflict: list[Constraint] = []  # a minimal set that can't all hold; empty unless nothing was found

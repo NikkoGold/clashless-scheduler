@@ -31,7 +31,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 - **Back-to-back classes are fine.** The overlap test is `a.start < b.end and b.start < a.end`. There is no travel time and no online/in-person handling.
 - **Exactly one group per component** for each selected course. Any lab can go with any lecture (the `parent` field is stored but not enforced).
 - **Top-K never repeats.** Each solution found is ruled out before solving again. Stop at K solutions or when there are none left, and report "only N possible". Groups with identical times are merged first, so no two results look the same on the grid.
-- **`take_n_of`**: if the pool has exactly n courses, take all of them. If it has fewer than n, show an error before solving.
+- **`take_n_of`**: if the pool has exactly n courses, take all of them. If it has fewer than n, show an error before solving. n only counts courses in that pool; a required course in the pool uses up a pick. Hard means exactly n. Soft means n is the target, and each course over costs twice what each course short costs.
 - The week defaults to **Sun–Fri** (it can be changed with the catalog's `week` field).
 - **Session times are whole hours.** The loader rejects `10:30`.
 - **`required` (course) is the data-file form of `must_take`.** `default_constraints(catalog)` turns each required course into a hard `must_take`; the solver never reads `required`. Courses in neither a `must_take` nor a `take_n_of` pool are not scheduled.

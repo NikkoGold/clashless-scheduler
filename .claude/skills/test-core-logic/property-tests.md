@@ -20,4 +20,6 @@ For each generated (catalog, constraints, k in 1–5):
 - `assert_matches_oracle(results, catalog, constraints, k)`
 - Solving twice gives the same scores (determinism).
 
+A uniform draw rarely produces any one constraint kind, so `test_every_constraint_kind_matches_the_checker_and_the_oracle` also runs the first two properties once per kind. A new kind must be added to `ALL_KINDS` and `_constraints_by_kind` in `strategies.py`.
+
 When Hypothesis finds a failure, copy the shrunk catalog into a named regression test in the relevant `test_solver_*.py` file before fixing.

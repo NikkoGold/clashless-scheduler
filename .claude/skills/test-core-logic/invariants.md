@@ -7,7 +7,8 @@ Checks one schedule:
 1. **Completeness** — every selected course has exactly one option per component; unselected courses have none.
 2. **No overlap** — for every pair of chosen sessions on the same day: not (`a.start < b.end and b.start < a.end`). Back-to-back is allowed.
 3. **Hard constraints** — every `strength == "hard"` constraint is satisfied, checked independently of the solver (re-derive from the chosen sessions; don't trust solver flags).
-4. **Breakdown** — the score breakdown has one entry per soft constraint, each marked met/broken, and the total equals the sum of weighted penalties.
+4. **Breakdown** — the breakdown has one entry per constraint, hard and soft, each marked met/broken, and the total equals the sum of weighted penalties. Hard entries are always met.
+5. **Ties disclosed** — the recommended member of a merged option is its cheapest. Every other member at that cost is either recommended too (same breakdown) or listed as an alternative saying what it breaks instead.
 
 ## `assert_valid_results(results, catalog, constraints, k)`
 Checks a top-K list:
@@ -17,4 +18,4 @@ Checks a top-K list:
 4. Scores are non-improving by rank (penalty of #i ≤ penalty of #i+1).
 5. If `len(results) < k`, the "only N possible" note is present and N == `len(results)`.
 
-Keep the rule definitions in one dispatch table keyed by constraint `kind`. Each entry has a `hard_ok(schedule, c) -> bool` check and a `soft_penalty(schedule, c) -> int` function (unweighted). The invariant checker uses `hard_ok`; the oracle ([oracle.md](oracle.md)) uses both. `add-constraint-kind` then only has to add one entry. An unknown kind must raise, not pass silently.
+Keep the rule definitions in one dispatch table keyed by constraint `kind`. Each entry has a `hard_ok(schedule, c, catalog) -> bool` check and a `soft_penalty(schedule, c, catalog) -> int` function (unweighted). Rules that depend on which member of a merged option you register for also go through `member_penalty` and `hard_member_allows`. The invariant checker uses `hard_ok`; the oracle ([oracle.md](oracle.md)) uses both. `add-constraint-kind` then only has to add one entry. An unknown kind must raise, not pass silently.

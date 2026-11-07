@@ -87,15 +87,33 @@ Days are written `Sun`–`Sat`. **The week defaults to Sun–Fri**, so the calen
 ## Constraint vocabulary (shared by both parsers)
 Each constraint has `kind`, parameters, `strength: hard | soft` and a `weight` from 1 to 10.
 - `must_take(course)`, `exclude_course(course)`, `take_n_of(courses, n)`. With `take_n_of`, the solver picks the best n courses out of the pool. If the pool has exactly n courses, all of them are required (the same as listing each one under `must_take`). If the pool has fewer than n courses, the app shows a clear error before solving. **A course that is in neither a `must_take` nor a `take_n_of` pool is not scheduled.**
-- `no_class_before(time, days?)`, `no_class_after(time, days?)`
-- `day_off(day)`, `max_days(n)`, `max_hours_per_day(h)`
+  - **n only counts courses in that pool.** Courses selected outside it are unaffected, and credit rules still count the whole schedule. A required course that is also in the pool uses up one of its picks. Each pool is counted separately.
+  - Hard means exactly n from the pool, so a hard pool that contradicts other hard rules gives no schedule, and the user corrects their request. Soft means n is the target: a schedule can miss it either way, at a cost. Each course over costs twice what each course short costs, because dropping a course is easier on a student than adding one, so "one fewer" ranks first.
+  - Optional courses mean a schedule with fewer or more courses can appear as a lower-ranked result, but an empty schedule never does.
+- `no_class_before(time, days?)`, `no_class_after(time, days?)`. Times can be any `HH:MM`, unlike session times. Without `days`, the rule applies every day.
+- `day_off(day)`, `max_days(n)`, `max_hours_per_day(h)`. A `day_off` outside the week has no effect.
 - `free_block(day?, start, end)` — for example lunch
-- `max_gap(minutes)`, `compact` (minimise idle time between classes)
+- `max_gap(minutes)`, `compact` (minimise idle time between classes). `compact` is soft only; the hard version is `max_gap(0)`.
 - `prefer_group(course, component, group)`, `avoid_group(...)`
-- `prefer_instructor(name)`, `avoid_instructor(name)`
+- `prefer_instructor(name)`, `avoid_instructor(name)`. These apply per component. `prefer_instructor` only affects components where that instructor teaches a group in the catalog. `avoid_instructor` affects any group they teach.
 - `min_credits(n)`, `max_credits(n)`
 
 Wording sets the strength. "Must", "can't" and "never" become hard constraints. "Prefer", "ideally" and "if possible" become soft ones.
+
+A constraint naming a course, component, group or instructor that isn't in the catalog is an error before solving.
+
+**Soft penalties scale with how badly a rule is broken**, then get multiplied by the weight. All are whole numbers, rounded up:
+| Rule | Penalty |
+|---|---|
+| `must_take`, `exclude_course`, `day_off` | 1 if broken |
+| `take_n_of` | 1 per course short of n, 2 per course over n |
+| `no_class_before`, `no_class_after`, `free_block` | hours of class in the forbidden time |
+| `max_days` | days over the limit |
+| `max_hours_per_day` | hours over the limit, summed across days |
+| `max_gap` | hours over the limit, summed across gaps |
+| `compact` | idle hours between classes |
+| `prefer_group`, `avoid_group`, `prefer_instructor`, `avoid_instructor` | 1 per chosen component that breaks it |
+| `min_credits`, `max_credits` | credits short or over |
 
 ## Parsing
 - **LLMParser**: the system prompt includes the constraint JSON schema plus the catalog's course IDs, names and instructors, so the model can resolve phrases like "the algorithms course" or "Prof. Levi". The parser asks for JSON output that follows the schema (the native structured-output mode of Gemini, OpenAI or Anthropic tool use, or Ollama's `format`). Output is validated with Pydantic; if validation fails, the parser retries once and includes the error. Anything the model couldn't map goes in `unparsed` and is shown to the user.
@@ -121,12 +139,12 @@ Provider SDKs are optional extras and are imported only when that provider is se
 - Hard constraints: groups that break them are forced to 0. Day-based rules use `day_used[d]` booleans; credit limits are linear sums.
 - Soft constraints: penalty terms multiplied by weight, then minimised. Gaps and compactness are measured with per-day first/last-class times (`span − class minutes`).
 - **Top-K results, never repeated.** Default K=5, changeable in the UI (number box next to Schedule, 1–20) or with `--top N` in the CLI. After each solution, add a constraint that rules out that exact group combination, then solve again. Stop at K solutions **or as soon as the model has no more solutions**, whichever comes first. A simple catalog with only 2 valid schedules therefore returns exactly 2.
-  - **Groups that meet at exactly the same times are merged before solving.** Within each course component, groups with identical sessions (same days, start and end times) become one option, shown as "lab 11 or 12" with the rooms and instructors of each. So two results always look different on the week grid. Soft preferences such as `prefer_instructor` or `prefer_group` still apply: a merged option is scored by its best member, and the result tells you which member to register for.
+  - **Groups that meet at exactly the same times are merged before solving.** Within each course component, groups with identical sessions (same days, start and end times) become one option, shown as "lab 11 or 12" with the rooms and instructors of each. So two results always look different on the week grid. Soft preferences such as `prefer_instructor` or `prefer_group` still apply: a merged option is scored by its best member, and the result tells you which member to register for. Hard group and instructor rules remove individual members before merging, so an option can shrink to the members that are left. If members tie on cost but break different preferences, the result stays a single one and says so: "Register for 11, or 12, which breaks X instead of Y".
   - Two schedules count as different when any course or merged option differs. Each extra tab shows how it differs from #1, for example "CS101 lab 21 or 22 instead of 11 or 12".
   - If fewer than K exist, the UI and CLI show "Only 2 possible schedules match your constraints" instead of padding the list.
   - All results must also satisfy every hard constraint. Lower-ranked results are only worse on soft preferences, and their score breakdown shows which ones.
-- If there is no solution: drop hard constraints one at a time to find which ones conflict, and report them, for example: "Fridays off + must take CS201 conflict: CS201 only meets Fridays".
-- Each result includes a score breakdown showing which preferences were met or broken.
+- If there is no solution: drop hard constraints one at a time to find a minimal set that conflicts, and report them, for example: "Fri off + must take CS201 conflict". The message names the constraints but doesn't explain why they conflict. If several separate conflicts exist, one is reported.
+- Each result includes a breakdown of **every** constraint, hard and soft, showing whether it was met or broken and what breaking it cost.
 
 ## Web UI
 A single page:
@@ -136,7 +154,7 @@ A single page:
    - Checkbox on: shows editable constraint chips (toggle hard/soft, change the weight, delete) and an "add constraint" form, then a **Solve** button.
    - Checkbox off: goes straight to results.
    - Unparsed fragments are always highlighted under the text box.
-4. Results: tabs for the top-K schedules, each with a weekly time grid (one colour per course), the score breakdown, and export buttons:
+4. Results: tabs for the top-K schedules, each with a weekly time grid (one colour per course), the full breakdown of every rule met or broken, any "Register for 11, or 12, which breaks X instead of Y" notes, and export buttons:
    - **PDF**: the browser's own print-to-PDF (`window.print()`) with a print stylesheet that hides everything except the selected schedule's grid and its course list. No extra dependencies.
    - **Excel**: `GET /api/export/xlsx` builds the file with openpyxl. Sheet 1 is the weekly grid with coloured cells; sheet 2 lists each course, component, group, day, time, room and instructor. The CLI has `--export out.xlsx`.
    - **JSON**: the raw solution, for debugging or reloading.

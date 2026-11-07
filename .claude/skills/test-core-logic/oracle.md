@@ -6,7 +6,7 @@ Implement in `tests/helpers/oracle.py` during build step 1, alongside `invariant
 - `enumerate_schedules(catalog, constraints) -> list[Schedule]`
   - For every allowed course selection (respecting `must_take`, `exclude_course`, `take_n_of`), take `itertools.product` over the **merged options** of each component.
   - Keep only combinations that are clash-free (`a.start < b.end and b.start < a.end`) and satisfy every hard constraint, using the dispatch table in `invariants.py`.
-- `score(schedule, constraints) -> int` — total weighted soft penalty, computed from the dispatch table's soft-penalty functions, never by calling the solver.
+- `score(schedule, constraints, catalog) -> int` — total weighted soft penalty, computed from the dispatch table's soft-penalty functions, never by calling the solver.
 - `assert_matches_oracle(results, catalog, constraints, k)`:
   1. Feasibility agrees: solver says infeasible ⇔ oracle list is empty.
   2. Best score equals the oracle's minimum.

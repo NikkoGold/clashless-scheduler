@@ -65,12 +65,16 @@ def overlaps(a: Session, b: Session) -> bool:
     return a.day == b.day and a.start < b.end and b.start < a.end
 
 
-def merge_options(course: Course) -> dict[str, list[Option]]:
-    """Per component, groups with identical session sets (in any order) become one option."""
+def merge_options(course: Course, keep=None) -> dict[str, list[Option]]:
+    """Per component, groups with identical session sets (in any order) become one option.
+
+    `keep(component, group)`, if given, removes groups before merging. A component can end up with no options.
+    """
     merged = {}
     for name, groups in course.components.items():
         by_times: dict[frozenset, list] = {}
         for g in groups:
-            by_times.setdefault(frozenset((s.day, s.start, s.end) for s in g.sessions), []).append(g)
+            if keep is None or keep(name, g):
+                by_times.setdefault(frozenset((s.day, s.start, s.end) for s in g.sessions), []).append(g)
         merged[name] = [Option(groups=members) for members in by_times.values()]
     return merged
