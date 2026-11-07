@@ -16,6 +16,8 @@ The key design point is that the LLM's only job is to produce a list of typed co
 
 **The review step is optional.** It's a "Review constraints before solving" checkbox in the UI, or the `--review` flag in the CLI. When it's on, the parsed constraints are shown as editable chips and solving waits for you to confirm. When it's off, the app parses and solves in one step, but the constraints it used are still shown next to the results. In both modes, anything the parser didn't understand is always shown (see Parsing).
 
+**The user must always be fully informed about a schedule they're shown.** This is a core principle, so every interface has to carry it through. With each result, show every rule, hard and soft, and whether it was met or broken. When there's a trade-off, say what it is. Don't hide a choice the user could reasonably care about, and when nothing fits, name the rules that conflict. If they're unhappy with what they see, they can change their rules and try again.
+
 **Back-to-back classes are allowed.** There is no travel time and no online/in-person distinction. A class ending at 12:00 and another starting at 12:00 do not clash, because the overlap test is `a.start < b.end and b.start < a.end`.
 
 ## Project layout
@@ -144,6 +146,7 @@ A single page:
 2. All other constraint kinds in the solver (hard and soft), scoring and ranking, and conflict explanation.
 3. The rule parser and its tests (a set of test phrases with expected constraints).
 4. Provider adapters, the LLM parser, and the router with fallback, budget and cache.
+   - **Before starting, discuss how to keep each call as cheap as possible.** The app should work for as many people as possible, including those on free tiers or with tight limits.
 5. The CLI (`--review`, `--pick`, `--no-required`, `--parser`).
 6. The FastAPI endpoints and the frontend (search, pick-N, review toggle, unparsed highlighting).
 7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.

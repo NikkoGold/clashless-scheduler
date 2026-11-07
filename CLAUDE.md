@@ -25,6 +25,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 - `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
 
 ## Core rules (don't break these)
+- **The user is always fully informed about a schedule they're shown.** Every result shows every rule, hard and soft, as met or broken. Trade-offs are stated ("Register for 11, or 12, which breaks X instead of Y"), and when nothing fits, the conflicting rules are named. Every interface must carry this through.
 - **The LLM only produces constraints.** It never decides the schedule. The solver is deterministic.
 - **Both parsers return the same `ParseResult`.** Anything not understood goes in `unparsed` as the original text and is always shown to the user. The rule parser never guesses.
 - **Back-to-back classes are fine.** The overlap test is `a.start < b.end and b.start < a.end`. There is no travel time and no online/in-person handling.
