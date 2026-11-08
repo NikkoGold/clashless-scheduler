@@ -13,6 +13,7 @@ Add at the **end of build step 2**, once all constraint kinds and top-K work. No
 - Deliberately duplicate a group's sessions some of the time so merging is exercised.
 - Constraints: 0–3 drawn from the kinds the solver supports, random hard/soft and weight 1–10.
 - Keep everything small enough for the oracle's size guard; `assume()` away the rest.
+- **Vary everything the code depends on**, or a whole class of input never gets tested: weeks other than Sun–Fri, constraint times off the hour, course requests that mix hard and soft (a conflict bug hid there because selections were always all-hard or all-soft), up to 5 extra constraints. When a feature adds a new dimension, widen the strategies in the same change.
 
 ## Properties
 For each generated (catalog, constraints, k in 1–5):

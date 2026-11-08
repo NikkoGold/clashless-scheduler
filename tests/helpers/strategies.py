@@ -24,13 +24,19 @@ from scheduler.models import (
 from tests.helpers.catalog_builder import catalog, course, grp
 
 DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri"]
-TIMES = ["08:00", "09:00", "10:00", "10:30", "12:00", "14:00", "16:00", "18:00"]
+ALL_DAYS = DAYS + ["Sat"]
+# the default week first (Hypothesis shrinks towards it), then other real-world weeks
+WEEKS = [DAYS, ["Mon", "Tue", "Wed", "Thu", "Fri"], ["Sun", "Mon", "Tue", "Wed", "Thu"], ALL_DAYS[1:]]
+# constraint times needn't be on the hour, unlike session times
+TIMES = ["08:00", "09:00", "09:15", "10:00", "10:30", "11:45", "12:00", "13:30", "14:00", "16:00", "17:20", "18:00"]
 INSTRUCTORS = ["Cohen", "Levi", None]
 
-_slots = st.builds(
-    lambda day, start, length: (day, start, min(start + length, 20)),
-    st.sampled_from(DAYS), st.integers(8, 19), st.integers(1, 3),
-)
+
+def _slots(week):
+    return st.builds(
+        lambda day, start, length: (day, start, min(start + length, 20)),
+        st.sampled_from(week), st.integers(8, 19), st.integers(1, 3),
+    )
 
 
 def _own_sessions_clash(slots) -> bool:
@@ -41,16 +47,17 @@ def _own_sessions_clash(slots) -> bool:
     )
 
 
-_session_sets = st.lists(_slots, min_size=1, max_size=2).filter(lambda s: not _own_sessions_clash(s))
+def _session_sets(week):
+    return st.lists(_slots(week), min_size=1, max_size=2).filter(lambda s: not _own_sessions_clash(s))
 
 
 @st.composite
-def _groups(draw) -> list[dict]:
+def _groups(draw, week) -> list[dict]:
     built = []
     last = None
     for i in range(draw(st.integers(1, 3))):
         # reuse the previous group's times some of the time, so merging gets exercised
-        slots = last if last is not None and draw(st.booleans()) else draw(_session_sets)
+        slots = last if last is not None and draw(st.booleans()) else draw(_session_sets(week))
         last = slots
         texts = [f"{day} {start}-{end}" for day, start, end in slots]
         built.append(grp(str(i + 1), *texts, instructor=draw(st.sampled_from(INSTRUCTORS))))
@@ -59,13 +66,14 @@ def _groups(draw) -> list[dict]:
 
 @st.composite
 def catalogs(draw):
+    week = draw(st.sampled_from(WEEKS))
     courses = []
     for course_id in ["A", "B", "C", "D"][: draw(st.integers(1, 4))]:
-        components = {"lecture": draw(_groups())}
+        components = {"lecture": draw(_groups(week))}
         if draw(st.booleans()):
-            components["lab"] = draw(_groups())
+            components["lab"] = draw(_groups(week))
         courses.append(course(course_id, credits=draw(st.sampled_from([2, 3, 3.5, 5])), **components))
-    return catalog(*courses)
+    return catalog(*courses, week=None if week == DAYS else week)
 
 
 def _strength() -> st.SearchStrategy[dict]:
@@ -79,7 +87,8 @@ def _constraints_by_kind(cat) -> dict:
     """A strategy for each constraint kind this catalog can support."""
     ids = [c.id for c in cat.courses]
     time = st.sampled_from(TIMES)
-    day = st.sampled_from(DAYS)
+    # mostly days in the catalog's week, sometimes any day (a rule on a day outside the week has no effect)
+    day = st.sampled_from(cat.week) | st.sampled_from(ALL_DAYS)
     groups = [
         (c.id, component, g.group)
         for c in cat.courses
@@ -113,16 +122,18 @@ def _constraints_by_kind(cat) -> dict:
             lambda t, d, **s: NoClassAfter(time=t, days=d, **s),
             time, st.none() | st.lists(day, min_size=1, max_size=2, unique=True),
         ),
-        "day_off": with_strength(lambda d, **s: DayOff(day=d, **s), st.sampled_from(DAYS + ["Sat"])),
+        "day_off": with_strength(lambda d, **s: DayOff(day=d, **s), day),
         "max_days": with_strength(lambda n, **s: MaxDays(n=n, **s), st.integers(1, 4)),
         "max_hours_per_day": with_strength(lambda h, **s: MaxHoursPerDay(h=h, **s), st.integers(1, 6)),
         "free_block": with_strength(
-            lambda d, start, length, **s: FreeBlock(
-                day=d, start=f"{start:02d}:00", end=f"{start + length:02d}:00", **s
+            lambda d, start, minute, length, **s: FreeBlock(
+                day=d, start=f"{start:02d}:{minute:02d}", end=f"{start + length:02d}:{minute:02d}", **s
             ),
-            st.none() | day, st.integers(8, 18), st.integers(1, 3),
+            st.none() | day, st.integers(8, 18), st.sampled_from([0, 0, 15, 30, 45]), st.integers(1, 3),
         ),
-        "max_gap": with_strength(lambda m, **s: MaxGap(minutes=m, **s), st.sampled_from([0, 60, 90, 120, 180])),
+        "max_gap": with_strength(
+            lambda m, **s: MaxGap(minutes=m, **s), st.sampled_from([0, 30, 45, 60, 75, 90, 120, 180])
+        ),
         "compact": st.integers(1, 10).map(lambda w: Compact(weight=w)),
         "prefer_group": group_rule(PreferGroup),
         "avoid_group": group_rule(AvoidGroup),
@@ -150,9 +161,10 @@ def _one_constraint(cat):
 
 @st.composite
 def problems(draw, kind=None):
-    """(catalog, constraints): always selects at least one course, plus 0-3 other constraints.
+    """(catalog, constraints): always selects at least one course, plus 0-5 other constraints.
 
     With `kind`, the constraints always include one of that kind, so rare kinds still get tested.
+    The selection can mix hard and soft course requests: a blind spot here once hid a conflict bug.
     """
     cat = draw(catalogs())
     if kind in ("prefer_instructor", "avoid_instructor") and kind not in _constraints_by_kind(cat):
@@ -160,13 +172,15 @@ def problems(draw, kind=None):
     ids = [c.id for c in cat.courses]
     pool = draw(st.lists(st.sampled_from(ids), min_size=1, unique=True))
     n = draw(st.integers(1, len(pool)))
+    mixed = [MustTake(course=c, **draw(_strength())) for c in pool]
     selection = draw(st.sampled_from([
         [MustTake(course=c) for c in pool],
         [MustTake(course=c, strength="soft", weight=draw(st.integers(1, 10))) for c in pool],
+        mixed,
         [TakeNOf(courses=pool, n=n)],
         [TakeNOf(courses=pool, n=n, strength="soft", weight=draw(st.integers(1, 10)))],
     ]))
-    others = draw(st.lists(_one_constraint(cat), max_size=3))
+    others = draw(st.lists(_one_constraint(cat), max_size=5))
     if kind is not None:
         others.insert(draw(st.integers(0, len(others))), draw(_constraints_by_kind(cat)[kind]))
     return cat, selection + others
