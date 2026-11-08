@@ -1,5 +1,6 @@
 import copy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -169,3 +170,22 @@ def test_groups_sharing_only_some_sessions_stay_separate():
         grp("2", "Mon 10-12", "Thu 10-12"),
     ])).courses[0]
     assert len(merge_options(c)["lecture"]) == 2
+
+
+# ---- file encoding ----
+
+SAMPLE = Path(__file__).parent.parent / "data" / "sample_courses.json"
+
+
+def test_a_catalog_saved_with_a_byte_order_mark_loads(tmp_path):
+    # Windows Notepad and Excel exports often start UTF-8 files with a BOM
+    path = tmp_path / "bom.json"
+    path.write_bytes(b"\xef\xbb\xbf" + SAMPLE.read_bytes())
+    assert load_catalog(path) == load_catalog(SAMPLE)
+
+
+def test_invalid_json_with_a_byte_order_mark_still_gets_the_readable_error(tmp_path):
+    path = tmp_path / "broken.json"
+    path.write_bytes(b"\xef\xbb\xbf" + b'{"term": ')
+    with pytest.raises(CatalogError, match="broken.json: not valid JSON"):
+        load_catalog(path)

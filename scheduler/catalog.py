@@ -14,7 +14,7 @@ class CatalogError(ValueError):
 def load_catalog(path) -> Catalog:
     path = Path(path)
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))  # utf-8-sig: also accepts a BOM
     except json.JSONDecodeError as e:
         raise CatalogError(f"{path.name}: not valid JSON ({e})") from None
     try:
