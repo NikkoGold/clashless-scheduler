@@ -27,7 +27,8 @@ All phrase cases live in one YAML file, shared with the live LLM eval (`test-llm
 - Constraint defaults apply when omitted (strength hard, weight 5). Compare constraints as an unordered collection; compare `unparsed` exactly, in order.
 - `unparsed` entries are `{text, reason, candidates}`: `text` is the original clause, trimmed; `reason` is one of `not_understood`, `unknown_name`, `ambiguous_name`, `invalid_time`, `conflicting_strength`; `candidates` (default `[]`) are the suggestions or options shown to the user.
 - The test loads the file and parametrizes with `ids=[case["text"] ...]`, so a failure names the phrase.
-- Phrases are parsed against the fixed catalog `tests/data/phrase_catalog.json` (a few courses with distinct names and instructors), so fuzzy matching is reproducible.
+- Phrases are parsed against the fixed catalog `tests/data/phrase_catalog.json` (a few courses with distinct names and instructors), so fuzzy matching is reproducible. A case with `catalog: sample` is parsed against `data/sample_courses.json` instead: use it for the realistic traps (similar names GVO/GVM, APA/XPA/XBI, HEP/HEW, SHO/SHM, Cohen/Cohn, "II" names, OLD's tutorial 11 + lab 11). The live LLM eval must honour this key too.
+- **Don't rely on hand-picked examples for combinations.** Verbs × list forms ("X and Y", "X, Y and Z", "X, Y") × both catalogs are generated in `test_each_verb_applies_to_every_item_of_a_list`; a new verb or list form goes into its tables (`VERBS`, `LIST_FORMS`, `NAMES`), not into one-off cases. Every phrase is also parsed against both catalogs to check it never breaks.
 - Validate the YAML's shape when loading it (unknown keys or a missing `rules:` fail loudly).
 
 ## Must cover

@@ -59,6 +59,10 @@ GROUP_WORDS = {"group", "section", "sec"}
 # used only when the catalog has the full component name
 COMPONENT_ALIASES = {"lec": "lecture", "tut": "tutorial", "recitation": "tutorial"}
 ABBREVIATIONS = TITLES | {"sec", "lec", "tut"}  # a dot after these doesn't end a clause
+# words that name a kind of class: only these can stand for a component the catalog doesn't have
+COMPONENT_WORDS = {"lecture", "lab", "tutorial", "recitation", "seminar", "workshop", "practical", "exercise",
+                   "discussion", "studio", "lec", "tut"}
+ROMAN = {"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10"}
 
 HARD_WORDS = r"\b(?:must|cant|never|need|needs|have to|has to|got to)\b"
 SOFT_WORDS = r"\b(?:prefer|preferably|ideally|if possible|avoid|rather|would like|hopefully|try to)\b"
@@ -96,7 +100,8 @@ class _Unparsed(Exception):
 class _Name:
     kind: str  # "course" or "instructor"
     value: str  # course id or instructor name
-    key: str  # what was matched, normalised
+    key: str  # what is matched: normalised, with Roman numerals as digits
+    raw: str  # normalised as written
 
 
 class RuleParser:
@@ -127,13 +132,26 @@ def _normalise(text: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", text.lower()).split())
 
 
+def _numerals(words: list[str], with_i: bool) -> list[str]:
+    """Roman numerals as digits, so "Principles II" and "principles 2" match.
+
+    "i" only counts in catalog names: in what the user types it's the pronoun (and already filler).
+    """
+    table = ROMAN | ({"i": "1"} if with_i else {})
+    return [table.get(w, w) for w in words]
+
+
 def _names(catalog: Catalog) -> list[_Name]:
+    def name(kind, value, text):
+        raw = _normalise(text)
+        return _Name(kind, value, " ".join(_numerals(raw.split(), with_i=True)), raw)
+
     found = []
     for c in catalog.courses:
-        found.append(_Name("course", c.id, _normalise(c.id)))
-        found.append(_Name("course", c.id, _normalise(c.name)))
+        found.append(name("course", c.id, c.id))
+        found.append(name("course", c.id, c.name))
     instructors = {g.instructor for c in catalog.courses for gs in c.components.values() for g in gs}
-    found += [_Name("instructor", i, _normalise(i)) for i in sorted(instructors - {None})]
+    found += [name("instructor", i, i) for i in sorted(instructors - {None})]
     return found
 
 
@@ -143,7 +161,7 @@ def _label(name: _Name) -> str:
 
 def _resolve(item: str, names: list[_Name]) -> _Name:
     """One catalog name for `item`, or _Unparsed (ambiguous_name / unknown_name with suggestions)."""
-    words = [w for w in item.split() if w not in TITLES]
+    words = _numerals([w for w in item.split() if w not in TITLES], with_i=False)
     query = " ".join(words)
     if not query:
         raise _Unparsed("not_understood")
@@ -183,8 +201,10 @@ def _resolve(item: str, names: list[_Name]) -> _Name:
 
 def _split(text: str, names: list[_Name]) -> list[str]:
     """Clauses as they appear in the text, so unparsed fragments and spans quote the user exactly."""
-    name_starts = {n.key.split()[0] for n in names if n.key} | TITLES
-    name_ends = {n.key.split()[-1] for n in names if n.key}
+    # both spellings of a name's first and last word: "…Principles II" can end in "ii" or "2"
+    name_starts = {k.split()[0] for n in names for k in (n.key, n.raw) if k} | TITLES
+    name_ends = {k.split()[-1] for n in names for k in (n.key, n.raw) if k}
+    name_ends |= {roman for roman, digit in ROMAN.items() if digit in name_ends}
     cuts, start = [], 0
     for m in SPLIT_AT.finditer(text):
         if _keeps_together(text, m, name_starts, name_ends):
@@ -275,6 +295,7 @@ def _normalise_clause(clause: str) -> str:
         s = re.sub(rf"\b{word}\b", str(n), s)
     s = re.sub(r"\b(?:at most|at the most|no more than|not more than|maximum|max|up to|only)\b", " MAX ", s)
     s = re.sub(r"\b(?:at least|at the least|no less than|not less than|no fewer than|minimum)\b", " MIN ", s)
+    s = s.replace(",", " and ")  # a comma left inside a clause separates list items ("Cohen, Adler")
     s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)  # keep "4.30", drop sentence dots
     s = re.sub(r"[^\w:.\- ]", " ", s)
     s = re.sub(r"(?<![\d\s])-|-(?![\d\s])", " ", s)  # keep "12-13", drop other hyphens
@@ -587,7 +608,7 @@ def _match_group(rest, catalog: Catalog, names, mode, strength) -> list[Constrai
         course_words = before or after
         if not course_words:
             raise _Unparsed("not_understood")  # "prefer group 11": which course?
-    elif len(rest) >= 3 and _is_course(" ".join(rest[:-2]), names):
+    elif len(rest) >= 3 and rest[-2] in COMPONENT_WORDS and _is_course(" ".join(rest[:-2]), names):
         course_words, comp, group = rest[:-2], rest[-2], rest[-1]  # a component this catalog doesn't have
     else:
         return None

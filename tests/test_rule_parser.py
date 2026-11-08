@@ -18,9 +18,11 @@ from tests.helpers.catalog_builder import catalog, course, grp
 DATA = Path(__file__).parent / "data"
 SAMPLE = Path(__file__).parent.parent / "data" / "sample_courses.json"
 
-CASE_KEYS = {"text", "rules", "llm", "tags"}
+CASE_KEYS = {"text", "catalog", "rules", "llm", "tags"}
 RULES_KEYS = {"constraints", "unparsed"}
 UNPARSED_KEYS = {"text", "reason", "candidates"}
+# a case's optional `catalog:` names the catalog it's parsed against (default: phrase)
+CATALOG_FILES = {"phrase": DATA / "phrase_catalog.json", "sample": SAMPLE}
 
 
 def load_phrase_cases(path: Path) -> list[dict]:
@@ -32,6 +34,7 @@ def load_phrase_cases(path: Path) -> list[dict]:
         assert isinstance(case, dict), f"case {label!r} is not a mapping"
         assert not set(case) - CASE_KEYS, f"case {label!r}: unknown keys {sorted(set(case) - CASE_KEYS)}"
         assert "text" in case and "rules" in case, f"case {label!r}: needs both text and rules"
+        assert case.get("catalog", "phrase") in CATALOG_FILES, f"case {label!r}: unknown catalog {case['catalog']!r}"
         rules = case["rules"]
         assert set(rules) == RULES_KEYS, f"case {label!r}: rules needs exactly {sorted(RULES_KEYS)}"
         for frag in rules["unparsed"]:
@@ -42,11 +45,16 @@ def load_phrase_cases(path: Path) -> list[dict]:
 
 
 CASES = load_phrase_cases(DATA / "phrases.yaml")
+CATALOGS = {name: load_catalog(path) for name, path in CATALOG_FILES.items()}
+
+
+def catalog_for(case: dict):
+    return CATALOGS[case.get("catalog", "phrase")]
 
 
 @pytest.fixture(scope="module")
 def phrase_catalog():
-    return load_catalog(DATA / "phrase_catalog.json")
+    return CATALOGS["phrase"]
 
 
 def _key(c) -> str:
@@ -60,8 +68,8 @@ def _keys(constraints) -> list[str]:
 # ---- the phrase table ----
 
 @pytest.mark.parametrize("case", CASES, ids=[c["text"] for c in CASES])
-def test_phrase(case, phrase_catalog):
-    result = RuleParser().parse(case["text"], phrase_catalog)
+def test_phrase(case):
+    result = RuleParser().parse(case["text"], catalog_for(case))
     expected = case["rules"]
     assert _keys(result.constraints) == _keys(parse_constraint(c) for c in expected["constraints"])
     assert [f.model_dump() for f in result.unparsed] == [
@@ -69,10 +77,64 @@ def test_phrase(case, phrase_catalog):
     ]
 
 
-def test_every_phrase_result_only_names_things_in_the_catalog(phrase_catalog):
+def test_every_phrase_result_only_names_things_in_the_catalog():
     # the solver rejects unknown names, so the rule parser must never emit one
     for case in CASES:
-        check_references(phrase_catalog, RuleParser().parse(case["text"], phrase_catalog).constraints)
+        cat = catalog_for(case)
+        check_references(cat, RuleParser().parse(case["text"], cat).constraints)
+
+
+def test_every_phrase_runs_against_both_catalogs_without_error():
+    # a phrase written for one catalog must still parse safely against the other
+    for case in CASES:
+        for cat in CATALOGS.values():
+            check_references(cat, RuleParser().parse(case["text"], cat).constraints)
+
+
+# ---- every verb with every list form, on both catalogs (generated, not hand-picked) ----
+
+# verb -> (kind for a course, kind for an instructor or None if it doesn't apply, strength)
+VERBS = {
+    "take": ("must_take", None, "hard"),
+    "ideally take": ("must_take", None, "soft"),
+    "drop": ("exclude_course", None, "hard"),
+    "skip": ("exclude_course", None, "hard"),
+    "don't take": ("exclude_course", None, "hard"),
+    "prefer": ("must_take", "prefer_instructor", "soft"),
+    "avoid": ("exclude_course", "avoid_instructor", "soft"),
+    "never": ("exclude_course", "avoid_instructor", "hard"),
+    "no": ("exclude_course", "avoid_instructor", "hard"),
+}
+LIST_FORMS = ["{} and {}", "{}, {} and {}", "{}, {}"]
+# what the user types -> what the rule should name
+NAMES = {
+    "phrase": {"course": [("Algorithms", "ALG"), ("Databases", "DB"), ("CS101", "CS101")],
+               "instructor": [("Cohen", "Cohen"), ("Adler", "Adler"), ("Levi", "Levi")]},
+    "sample": {"course": [("XBI", "XBI"), ("Ground Vehicle Maintenance", "GVM"), ("NAV2", "NAV2")],
+               "instructor": [("Brenner", "Brenner"), ("Dagan", "Dagan"), ("Erez", "Erez")]},
+}
+
+
+def _list_cases():
+    for cat_name, by_type in NAMES.items():
+        for verb, (course_kind, instructor_kind, strength) in VERBS.items():
+            for form in LIST_FORMS:
+                for name_type, kind in (("course", course_kind), ("instructor", instructor_kind)):
+                    if kind is None:
+                        continue
+                    picked = by_type[name_type][: form.count("{}")]
+                    text = f"{verb} " + form.format(*(typed for typed, _ in picked))
+                    yield pytest.param(cat_name, text, kind, strength, [value for _, value in picked], id=f"{cat_name}: {text}")
+
+
+@pytest.mark.parametrize("cat_name, text, kind, strength, values", list(_list_cases()))
+def test_each_verb_applies_to_every_item_of_a_list(cat_name, text, kind, strength, values):
+    result = RuleParser().parse(text, CATALOGS[cat_name])
+    assert result.unparsed == []
+    field = "name" if kind.endswith("instructor") else "course"
+    assert sorted((c.kind, getattr(c, field), c.strength) for c in result.constraints) == sorted(
+        (kind, v, strength) for v in values
+    )
 
 
 # ---- the phrase file's own shape ----
@@ -217,8 +279,8 @@ def test_unparsed_clauses_are_not_spans(phrase_catalog):
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["text"] for c in CASES])
-def test_spans_together_give_exactly_the_constraints(case, phrase_catalog):
-    result = RuleParser().parse(case["text"], phrase_catalog)
+def test_spans_together_give_exactly_the_constraints(case):
+    result = RuleParser().parse(case["text"], catalog_for(case))
     assert {_key(c) for s in result.spans for c in s.constraints} == {_key(c) for c in result.constraints}
 
 

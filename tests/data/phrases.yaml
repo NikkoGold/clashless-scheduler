@@ -370,3 +370,77 @@
 - text: "fridays off, I'm not a morning person"
   rules: {constraints: [{kind: day_off, day: Fri}], unparsed: [{text: "I'm not a morning person", reason: not_understood}]}
   tags: [no-guessing]
+
+# ---- fallback for components the catalog doesn't have, and course lists ----
+- text: "prefer CS101 seminar 1"  # a component word this catalog doesn't use: suggest its components
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 seminar 1", reason: unknown_name, candidates: [lab, lecture]}]}
+  tags: [names, groups]
+- text: "take Algorithms and Databases"
+  rules: {constraints: [{kind: must_take, course: ALG}, {kind: must_take, course: DB}], unparsed: []}
+  tags: [names, splitting]
+
+# ---- against the sample catalog (data/sample_courses.json): similar names, "II" names, real groups ----
+- text: "take XBI and APA"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: XBI}, {kind: must_take, course: APA}], unparsed: []}
+  tags: [names, splitting]
+- text: "take Starship Navigation Principles 2"  # 2 and II are the same in names
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: NAV2}], unparsed: []}
+  tags: [names, numerals]
+- text: "take navigation 2"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: NAV2}], unparsed: []}
+  tags: [names, numerals]
+- text: "take helm operations ii"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: HELM2}], unparsed: []}
+  tags: [names, numerals]
+- text: "take Physical Conditioning II"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: PC2}], unparsed: []}
+  tags: [names, numerals]
+- text: "take physical conditioning 2"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: PC2}], unparsed: []}
+  tags: [names, numerals]
+- text: "take pathology"  # Xenopathology is one word, so only Advanced Pathology contains "pathology"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: APA}], unparsed: []}
+  tags: [names]
+- text: "take high energy"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "take high energy", reason: ambiguous_name, candidates: [HEP, HEW]}]}
+  tags: [names]
+- text: "take shuttlecraft"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "take shuttlecraft", reason: ambiguous_name, candidates: [SHM, SHO]}]}
+  tags: [names]
+- text: "take ground vehicle"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "take ground vehicle", reason: ambiguous_name, candidates: [GVM, GVO]}]}
+  tags: [names]
+- text: "prefer Coen"  # typo: Cohen is closer than Cohn
+  catalog: sample
+  rules: {constraints: [{kind: prefer_instructor, name: Cohen, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer OLD group 11"  # OLD has a tutorial 11 and a lab 11
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "prefer OLD group 11", reason: ambiguous_name, candidates: [lab 11, tutorial 11]}]}
+  tags: [names, groups]
+- text: "take PC2 lecture group 2"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: PC2}, {kind: prefer_group, course: PC2, component: lecture, group: "2"}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer lecture 2 of XBI"
+  catalog: sample
+  rules: {constraints: [{kind: prefer_group, course: XBI, component: lecture, group: "2", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "avoid Brenner and Dagan"
+  catalog: sample
+  rules: {constraints: [{kind: avoid_instructor, name: Brenner, strength: soft}, {kind: avoid_instructor, name: Dagan, strength: soft}], unparsed: []}
+  tags: [names, splitting]
+- text: "drop XPA and HEW"
+  catalog: sample
+  rules: {constraints: [{kind: exclude_course, course: XPA}, {kind: exclude_course, course: HEW}], unparsed: []}
+  tags: [names, splitting]
