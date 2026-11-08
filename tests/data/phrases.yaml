@@ -1,0 +1,372 @@
+# Phrase -> expected parse, parsed against tests/data/phrase_catalog.json.
+# `rules:` is checked exactly by tests/test_rule_parser.py (constraints unordered, unparsed in order).
+# `llm:` (optional) feeds the live LLM eval; unparsed is ignored there.
+# Constraint defaults apply when omitted: strength hard, weight 5 (compact defaults to soft).
+# unparsed entries: {text: <original fragment>, reason: <code>, candidates: [...] (optional, default [])}
+
+# ---- times: no_class_before / no_class_after ----
+- text: "no classes before 10"
+  rules: {constraints: [{kind: no_class_before, time: "10:00"}], unparsed: []}
+  llm: {constraints: [{kind: no_class_before, time: "10:00"}]}
+  tags: [time]
+- text: "nothing before 9am"
+  rules: {constraints: [{kind: no_class_before, time: "09:00"}], unparsed: []}
+  tags: [time]
+- text: "no class before 10:30"
+  rules: {constraints: [{kind: no_class_before, time: "10:30"}], unparsed: []}
+  tags: [time]
+- text: "never before 8"
+  rules: {constraints: [{kind: no_class_before, time: "08:00"}], unparsed: []}
+  tags: [time, strength]
+- text: "start after 11"
+  rules: {constraints: [{kind: no_class_before, time: "11:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after 4pm"
+  rules: {constraints: [{kind: no_class_after, time: "16:00"}], unparsed: []}
+  tags: [time]
+- text: "nothing after 16:00"
+  rules: {constraints: [{kind: no_class_after, time: "16:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after 4"
+  rules: {constraints: [{kind: no_class_after, time: "16:00"}], unparsed: []}
+  tags: [time]
+- text: "finish by 6"
+  rules: {constraints: [{kind: no_class_after, time: "18:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after noon"
+  rules: {constraints: [{kind: no_class_after, time: "12:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after 12"
+  rules: {constraints: [{kind: no_class_after, time: "12:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after 8"  # a bare 8-12 is taken as given; the chip shows 08:00
+  rules: {constraints: [{kind: no_class_after, time: "08:00"}], unparsed: []}
+  tags: [time]
+- text: "no classes after 4.30pm"  # a '.' between digits doesn't split
+  rules: {constraints: [{kind: no_class_after, time: "16:30"}], unparsed: []}
+  tags: [time, splitting]
+- text: "no classes before 25"
+  rules: {constraints: [], unparsed: [{text: "no classes before 25", reason: invalid_time}]}
+  tags: [time]
+
+# ---- days ----
+- text: "fridays off"
+  rules: {constraints: [{kind: day_off, day: Fri}], unparsed: []}
+  llm: {constraints: [{kind: day_off, day: Fri}]}
+  tags: [days]
+- text: "Fri off"
+  rules: {constraints: [{kind: day_off, day: Fri}], unparsed: []}
+  tags: [days]
+- text: "no classes on sunday"
+  rules: {constraints: [{kind: day_off, day: Sun}], unparsed: []}
+  tags: [days]
+- text: "keep Thursdays free"
+  rules: {constraints: [{kind: day_off, day: Thu}], unparsed: []}
+  tags: [days]
+- text: "Mon and Wed off"
+  rules: {constraints: [{kind: day_off, day: Mon}, {kind: day_off, day: Wed}], unparsed: []}
+  tags: [days, splitting]
+- text: "Mon, Wed and Fri off"
+  rules: {constraints: [{kind: day_off, day: Mon}, {kind: day_off, day: Wed}, {kind: day_off, day: Fri}], unparsed: []}
+  tags: [days, splitting]
+- text: "saturdays off"  # outside the default week: kept, and the solver gives it no effect
+  rules: {constraints: [{kind: day_off, day: Sat}], unparsed: []}
+  tags: [days]
+- text: "weekends off"  # the weekend is Fri-Sat
+  rules: {constraints: [{kind: day_off, day: Fri}, {kind: day_off, day: Sat}], unparsed: []}
+  tags: [days]
+- text: "no classes before 10 on Mondays"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Mon]}], unparsed: []}
+  tags: [days, time]
+- text: "no classes before 10 on Mon and Wed"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Mon, Wed]}], unparsed: []}
+  tags: [days, time, splitting]
+- text: "no classes before 10 except Tuesdays"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Sun, Mon, Wed, Thu, Fri]}], unparsed: []}
+  tags: [days, time]
+- text: "no lectures before 9 except on Sundays"
+  rules: {constraints: [{kind: no_class_before, time: "09:00", days: [Mon, Tue, Wed, Thu, Fri]}], unparsed: []}
+  tags: [days, time]
+- text: "no classes before 10 on mondays and fridays off"  # two rules joined by a day list: not split, so not guessed
+  rules: {constraints: [], unparsed: [{text: "no classes before 10 on mondays and fridays off", reason: not_understood}]}
+  tags: [days, splitting, no-guessing]
+- text: "no classes after 4 every day"
+  rules: {constraints: [{kind: no_class_after, time: "16:00"}], unparsed: []}
+  tags: [days, time]
+- text: "no classes before 9 on weekdays"  # weekdays = the week minus Fri and Sat
+  rules: {constraints: [{kind: no_class_before, time: "09:00", days: [Sun, Mon, Tue, Wed, Thu]}], unparsed: []}
+  tags: [days, time]
+- text: "no classes before 10 on weekends"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Fri, Sat]}], unparsed: []}
+  tags: [days, time]
+- text: "a day off"
+  rules: {constraints: [], unparsed: [{text: "a day off", reason: not_understood}]}
+  tags: [days, vague]
+- text: "mornings off"
+  rules: {constraints: [], unparsed: [{text: "mornings off", reason: not_understood}]}
+  tags: [days, vague]
+- text: "evenings free"
+  rules: {constraints: [], unparsed: [{text: "evenings free", reason: not_understood}]}
+  tags: [days, vague]
+
+# ---- free blocks ----
+- text: "keep 12-13 free"
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  llm: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}]}
+  tags: [free]
+- text: "keep 12–13 free"
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  tags: [free]
+- text: "keep 12 to 1 free"
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  tags: [free]
+- text: "free between 12 and 1"  # the "and" inside a range doesn't split
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  tags: [free, splitting]
+- text: "keep lunch free"
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  tags: [free]
+- text: "I need a lunch break"
+  rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
+  tags: [free]
+- text: "lunch 13-14"
+  rules: {constraints: [{kind: free_block, start: "13:00", end: "14:00"}], unparsed: []}
+  tags: [free]
+- text: "keep Tuesday 12-14 free"
+  rules: {constraints: [{kind: free_block, day: Tue, start: "12:00", end: "14:00"}], unparsed: []}
+  tags: [free, days]
+- text: "keep 8-10pm free"
+  rules: {constraints: [{kind: free_block, start: "20:00", end: "22:00"}], unparsed: []}
+  tags: [free, time]
+- text: "keep 11-1pm free"
+  rules: {constraints: [{kind: free_block, start: "11:00", end: "13:00"}], unparsed: []}
+  tags: [free, time]
+- text: "keep 13-12 free"
+  rules: {constraints: [], unparsed: [{text: "keep 13-12 free", reason: invalid_time}]}
+  tags: [free, time]
+
+# ---- load and gaps ----
+- text: "at most 4 days"
+  rules: {constraints: [{kind: max_days, n: 4}], unparsed: []}
+  tags: [load]
+- text: "no more than three days a week"
+  rules: {constraints: [{kind: max_days, n: 3}], unparsed: []}
+  tags: [load]
+- text: "max 6 hours a day"
+  rules: {constraints: [{kind: max_hours_per_day, h: 6}], unparsed: []}
+  tags: [load]
+- text: "at most 4 hours per day"
+  rules: {constraints: [{kind: max_hours_per_day, h: 4}], unparsed: []}
+  tags: [load]
+- text: "no gaps longer than 1 hour"
+  rules: {constraints: [{kind: max_gap, minutes: 60}], unparsed: []}
+  tags: [gaps]
+- text: "max gap 90 minutes"
+  rules: {constraints: [{kind: max_gap, minutes: 90}], unparsed: []}
+  tags: [gaps]
+- text: "no gaps"
+  rules: {constraints: [{kind: max_gap, minutes: 0}], unparsed: []}
+  tags: [gaps]
+- text: "ideally no gaps"
+  rules: {constraints: [{kind: max_gap, minutes: 0, strength: soft}], unparsed: []}
+  tags: [gaps, strength]
+- text: "compact schedule"
+  rules: {constraints: [{kind: compact}], unparsed: []}
+  tags: [gaps]
+- text: "must be compact"  # compact is soft only; the hard version is max_gap(0)
+  rules: {constraints: [{kind: max_gap, minutes: 0}], unparsed: []}
+  tags: [gaps, strength]
+
+# ---- names: instructors ----
+- text: "prefer Cohen"  # exact match beats the near-identical Cohn
+  rules: {constraints: [{kind: prefer_instructor, name: Cohen, strength: soft}], unparsed: []}
+  llm: {constraints: [{kind: prefer_instructor, name: Cohen, strength: soft}]}
+  tags: [names]
+- text: "prefer Cohn"
+  rules: {constraints: [{kind: prefer_instructor, name: Cohn, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Prof. Levi"  # the dot after a title doesn't split
+  rules: {constraints: [{kind: prefer_instructor, name: Levi, strength: soft}], unparsed: []}
+  tags: [names, splitting]
+- text: "prefer Brener"  # typo
+  rules: {constraints: [{kind: prefer_instructor, name: Brenner, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Cohen and Adler"
+  rules: {constraints: [{kind: prefer_instructor, name: Cohen, strength: soft}, {kind: prefer_instructor, name: Adler, strength: soft}], unparsed: []}
+  tags: [names, splitting]
+- text: "avoid Brenner"
+  rules: {constraints: [{kind: avoid_instructor, name: Brenner, strength: soft}], unparsed: []}
+  tags: [names, strength]
+- text: "never Brenner"
+  rules: {constraints: [{kind: avoid_instructor, name: Brenner}], unparsed: []}
+  tags: [names, strength]
+- text: "prefer Levy"
+  rules: {constraints: [], unparsed: [{text: "prefer Levy", reason: unknown_name, candidates: [Levi]}]}
+  tags: [names]
+- text: "prefer Katz"
+  rules: {constraints: [], unparsed: [{text: "prefer Katz", reason: unknown_name}]}
+  tags: [names]
+
+# ---- names: courses ----
+- text: "take Algorithms"
+  rules: {constraints: [{kind: must_take, course: ALG}], unparsed: []}
+  tags: [names]
+- text: "must take the algorithms course"
+  rules: {constraints: [{kind: must_take, course: ALG}], unparsed: []}
+  tags: [names]
+- text: "take ALG"
+  rules: {constraints: [{kind: must_take, course: ALG}], unparsed: []}
+  tags: [names]
+- text: "take Ground Vehicle Operation"
+  rules: {constraints: [{kind: must_take, course: GVO}], unparsed: []}
+  tags: [names]
+- text: "take Ground Vehicle Operations"  # typo
+  rules: {constraints: [{kind: must_take, course: GVO}], unparsed: []}
+  tags: [names]
+- text: "take ground vehicle"
+  rules: {constraints: [], unparsed: [{text: "take ground vehicle", reason: ambiguous_name, candidates: [GVM, GVO]}]}
+  tags: [names]
+- text: "I want Algorithms"  # "want" is left to the LLM: it's filler in "I want Fridays off"
+  rules: {constraints: [], unparsed: [{text: "I want Algorithms", reason: not_understood}]}
+  llm: {constraints: [{kind: must_take, course: ALG}]}
+  tags: [names, vague]
+- text: "drop CS101"
+  rules: {constraints: [{kind: exclude_course, course: CS101}], unparsed: []}
+  tags: [names]
+- text: "no Databases"
+  rules: {constraints: [{kind: exclude_course, course: DB}], unparsed: []}
+  tags: [names]
+- text: "ideally skip Databases"
+  rules: {constraints: [{kind: exclude_course, course: DB, strength: soft}], unparsed: []}
+  tags: [names, strength]
+- text: "drop CS101 and Databases"
+  rules: {constraints: [{kind: exclude_course, course: CS101}, {kind: exclude_course, course: DB}], unparsed: []}
+  tags: [names, splitting]
+- text: "prefer Databases"  # "prefer" on a course is a soft must_take
+  rules: {constraints: [{kind: must_take, course: DB, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "avoid Databases"  # "avoid" on a course is a soft exclude
+  rules: {constraints: [{kind: exclude_course, course: DB, strength: soft}], unparsed: []}
+  tags: [names]
+
+# ---- names: groups ----
+- text: "prefer CS101 lab 11"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "avoid lecture 2 for CS101"
+  rules: {constraints: [{kind: avoid_group, course: CS101, component: lecture, group: "2", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer CS101 lab 13"
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 lab 13", reason: unknown_name, candidates: ["11", "12"]}]}
+  tags: [names, groups]
+- text: "prefer CS101 tutorial 1"  # CS101 has no tutorial: suggest its components
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 tutorial 1", reason: unknown_name, candidates: [lab, lecture]}]}
+  tags: [names, groups]
+- text: "prefer lab 11 of Intro to Programming"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer CS101 group 11"  # only the lab has a group 11
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  llm: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}]}
+  tags: [names, groups]
+- text: "prefer CS101 lab group 11"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer lab group 11 for CS101"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer lecture group 2 in Intro to Programming"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lecture, group: "2", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "prefer group 12 for CS101"
+  rules: {constraints: [{kind: prefer_group, course: CS101, component: lab, group: "12", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "take CS101 group 11"  # take the course, and only in that group
+  rules: {constraints: [{kind: must_take, course: CS101}, {kind: prefer_group, course: CS101, component: lab, group: "11"}], unparsed: []}
+  llm: {constraints: [{kind: must_take, course: CS101}, {kind: prefer_group, course: CS101, component: lab, group: "11"}]}
+  tags: [names, groups]
+- text: "take CS101 lab 11"
+  rules: {constraints: [{kind: must_take, course: CS101}, {kind: prefer_group, course: CS101, component: lab, group: "11"}], unparsed: []}
+  tags: [names, groups]
+- text: "ideally take CS101 lab 11"
+  rules: {constraints: [{kind: must_take, course: CS101, strength: soft}, {kind: prefer_group, course: CS101, component: lab, group: "11", strength: soft}], unparsed: []}
+  tags: [names, groups, strength]
+- text: "avoid CS101 section 2"
+  rules: {constraints: [{kind: avoid_group, course: CS101, component: lecture, group: "2", strength: soft}], unparsed: []}
+  tags: [names, groups]
+- text: "never CS101 lec 1"
+  rules: {constraints: [{kind: avoid_group, course: CS101, component: lecture, group: "1"}], unparsed: []}
+  tags: [names, groups]
+- text: "avoid CS101 sec. 2"  # the dot after an abbreviation doesn't split
+  rules: {constraints: [{kind: avoid_group, course: CS101, component: lecture, group: "2", strength: soft}], unparsed: []}
+  tags: [names, groups, splitting]
+- text: "prefer CS101 group 13"  # no component named: suggest every group, labelled
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 group 13", reason: unknown_name, candidates: [lab 11, lab 12, lecture 1, lecture 2]}]}
+  tags: [names, groups]
+- text: "prefer CS101 lab group 13"
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 lab group 13", reason: unknown_name, candidates: ["11", "12"]}]}
+  tags: [names, groups]
+- text: "prefer group 11"  # which course?
+  rules: {constraints: [], unparsed: [{text: "prefer group 11", reason: not_understood}]}
+  tags: [names, groups]
+- text: "prefer CS101 tut 1"  # an abbreviation only counts if the catalog has that component
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 tut 1", reason: unknown_name, candidates: [lab, lecture]}]}
+  tags: [names, groups]
+
+# ---- credits ----
+- text: "at least 20 credits"
+  rules: {constraints: [{kind: min_credits, n: 20}], unparsed: []}
+  tags: [credits]
+- text: "no more than 24 credits"
+  rules: {constraints: [{kind: max_credits, n: 24}], unparsed: []}
+  tags: [credits]
+
+# ---- strength ----
+- text: "I'd prefer no classes before 10"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", strength: soft}], unparsed: []}
+  tags: [strength]
+- text: "ideally fridays off"
+  rules: {constraints: [{kind: day_off, day: Fri, strength: soft}], unparsed: []}
+  tags: [strength]
+- text: "fridays off if possible"
+  rules: {constraints: [{kind: day_off, day: Fri, strength: soft}], unparsed: []}
+  tags: [strength]
+- text: "I can't have classes after 6"
+  rules: {constraints: [{kind: no_class_after, time: "18:00"}], unparsed: []}
+  tags: [strength]
+- text: "must have fridays off"
+  rules: {constraints: [{kind: day_off, day: Fri}], unparsed: []}
+  tags: [strength]
+- text: "ideally I must have fridays off"
+  rules: {constraints: [], unparsed: [{text: "ideally I must have fridays off", reason: conflicting_strength}]}
+  tags: [strength]
+
+# ---- splitting, filler and no guessing ----
+- text: "no classes before 10, fridays off; prefer Cohen. keep lunch free"
+  rules:
+    constraints:
+      - {kind: no_class_before, time: "10:00"}
+      - {kind: day_off, day: Fri}
+      - {kind: prefer_instructor, name: Cohen, strength: soft}
+      - {kind: free_block, start: "12:00", end: "13:00"}
+    unparsed: []
+  tags: [splitting]
+- text: "fridays off and no classes after 4"
+  rules: {constraints: [{kind: day_off, day: Fri}, {kind: no_class_after, time: "16:00"}], unparsed: []}
+  tags: [splitting]
+- text: "please keep fridays off, thanks"
+  rules: {constraints: [{kind: day_off, day: Fri}], unparsed: []}
+  tags: [filler]
+- text: "I'm not a morning person"
+  rules: {constraints: [], unparsed: [{text: "I'm not a morning person", reason: not_understood}]}
+  llm: {constraints: [{kind: no_class_before, time: "10:00", strength: soft}]}
+  tags: [vague]
+- text: "no classes before 10 with Cohen"  # partly matched: the whole clause is unparsed
+  rules: {constraints: [], unparsed: [{text: "no classes before 10 with Cohen", reason: not_understood}]}
+  tags: [no-guessing]
+- text: "fridays off maybe"
+  rules: {constraints: [], unparsed: [{text: "fridays off maybe", reason: not_understood}]}
+  tags: [no-guessing]
+- text: "fridays off, I'm not a morning person"
+  rules: {constraints: [{kind: day_off, day: Fri}], unparsed: [{text: "I'm not a morning person", reason: not_understood}]}
+  tags: [no-guessing]

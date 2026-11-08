@@ -1,0 +1,42 @@
+{
+  "term": "phrases",
+  "courses": [
+    {
+      "id": "CS101", "name": "Intro to Programming", "credits": 4,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Cohen", "sessions": [{"day": "Sun", "start": "10:00", "end": "12:00"}]},
+          {"group": "2", "instructor": "Adler", "sessions": [{"day": "Mon", "start": "10:00", "end": "12:00"}]}
+        ],
+        "lab": [
+          {"group": "11", "parent": "1", "instructor": "Cohn", "sessions": [{"day": "Tue", "start": "14:00", "end": "16:00"}]},
+          {"group": "12", "parent": "1", "instructor": "Cohn", "sessions": [{"day": "Wed", "start": "14:00", "end": "16:00"}]}
+        ]
+      }
+    },
+    {
+      "id": "ALG", "name": "Algorithms", "credits": 3,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Levi", "sessions": [{"day": "Tue", "start": "10:00", "end": "12:00"}]}]
+      }
+    },
+    {
+      "id": "GVO", "name": "Ground Vehicle Operation", "credits": 3,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Dagan", "sessions": [{"day": "Wed", "start": "10:00", "end": "12:00"}]}]
+      }
+    },
+    {
+      "id": "GVM", "name": "Ground Vehicle Maintenance", "credits": 2,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Gal", "sessions": [{"day": "Thu", "start": "10:00", "end": "12:00"}]}]
+      }
+    },
+    {
+      "id": "DB", "name": "Databases", "credits": 3,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Brenner", "sessions": [{"day": "Thu", "start": "14:00", "end": "16:00"}]}]
+      }
+    }
+  ]
+}
