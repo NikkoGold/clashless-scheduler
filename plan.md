@@ -156,6 +156,8 @@ Provider SDKs are optional extras and are imported only when that provider is se
   - If fewer than K exist, the UI and CLI show "Only 2 possible schedules match your constraints" instead of padding the list.
   - All results must also satisfy every hard constraint. Lower-ranked results are only worse on soft preferences, and their score breakdown shows which ones.
 - If there is no solution: drop hard constraints one at a time to find a minimal set that conflicts, and report them, for example: "Fri off + must take CS201 conflict". The message names the constraints but doesn't explain why they conflict. If several separate conflicts exist, one is reported.
+  - While searching, the full request's courses stay available: dropping a `must_take` or hard pool drops the requirement, not the course. Otherwise dropping one could make the request *harder* (only excluded courses left) and the wrong rule would be blamed.
+  - "A schedule has at least one course" is treated as a rule the search can drop. It's tried first, so it's only blamed when needed, and then the result sets `nothing_to_schedule` and says so: "exclude A + exclude B leave no course that can be scheduled". Course requests are tried last, so when there are separate conflicts, the one naming the courses the user asked for is preferred.
 - Each result includes a breakdown of **every** constraint, hard and soft, showing whether it was met or broken and what breaking it cost.
 
 ## Web UI

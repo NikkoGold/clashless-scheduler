@@ -68,14 +68,20 @@ def _component_options(course, constraints, catalog) -> dict[str, list[list]]:
     return options
 
 
-def enumerate_schedules(catalog, constraints) -> list[SimpleNamespace]:
-    courses = {c.id: c for c in catalog.courses}
-    candidates = sorted(selectable_courses(constraints))
+def enumerate_schedules(catalog, constraints, candidates=None, allow_empty=False) -> list[SimpleNamespace]:
+    """Every valid schedule. By default the candidate courses come from `constraints` and a schedule
+    must have at least one course, as in the solver.
 
-    # every non-empty subset of the candidate courses is a possible selection
+    The conflict checks override both: `candidates` keeps the full request's courses available when
+    course requests are dropped, and `allow_empty` drops the implicit "at least one course" rule.
+    """
+    courses = {c.id: c for c in catalog.courses}
+    candidates = sorted(selectable_courses(constraints) if candidates is None else candidates)
+
+    # every subset of the candidate courses (non-empty unless allowed) is a possible selection
     selections = []
     total = 0
-    for size in range(1, len(candidates) + 1):
+    for size in range(0 if allow_empty else 1, len(candidates) + 1):
         for subset in itertools.combinations(candidates, size):
             slots = [
                 [(cid, comp, members) for members in options]

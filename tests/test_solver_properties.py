@@ -8,8 +8,8 @@ from hypothesis import assume, event, given, settings
 from hypothesis import strategies as st
 
 from scheduler.solver import solve
-from tests.helpers.invariants import assert_valid_results
-from tests.helpers.oracle import OracleTooLarge, assert_matches_oracle
+from tests.helpers.invariants import assert_valid_results, selectable_courses
+from tests.helpers.oracle import OracleTooLarge, assert_matches_oracle, enumerate_schedules
 from tests.helpers.strategies import ALL_KINDS, problems
 
 pytestmark = pytest.mark.slow
@@ -53,25 +53,45 @@ def test_solving_twice_gives_the_same_scores(problem, k):
     assert first == second
 
 
-def _feasible(cat, constraints) -> bool:
-    try:
-        return bool(solve(cat, constraints, k=1).schedules)
-    except ValueError as e:
-        assert "no courses" in str(e)
-        return True  # nothing is being asked for, so nothing conflicts
+def _check_conflict(cat, constraints):
+    """A reported conflict really conflicts, and every part of it is needed, judged by the oracle.
 
-
-@given(problem=problems())
-def test_a_reported_conflict_really_conflicts_and_every_part_is_needed(problem):
-    cat, constraints = problem
+    Feasibility is judged the way the conflict is meant: the full request's courses stay available
+    (dropping a must_take drops the requirement, not the course), and "at least one course" only
+    counts when the result says it's part of the conflict (`nothing_to_schedule`).
+    """
     result = solve(cat, constraints, k=1)
     event("unsolvable" if not result.schedules else "solvable")
     if result.schedules:
         assert result.conflict == []
+        assert not result.nothing_to_schedule
         return
 
     assert all(c.strength == "hard" for c in result.conflict), "a soft rule can't be part of a conflict"
-    rest = [c for c in constraints if c.strength == "soft"]
-    assert not _feasible(cat, result.conflict + rest)
-    for i in range(len(result.conflict)):
-        assert _feasible(cat, result.conflict[:i] + result.conflict[i + 1 :] + rest)
+    assert result.conflict or result.nothing_to_schedule, "nothing fits, but nothing is blamed"
+    courses = selectable_courses(constraints)
+    soft = [c for c in constraints if c.strength == "soft"]
+
+    def feasible(cs, allow_empty=not result.nothing_to_schedule):
+        try:
+            return bool(enumerate_schedules(cat, cs, candidates=courses, allow_empty=allow_empty))
+        except OracleTooLarge:
+            assume(False)
+
+    assert not feasible(result.conflict + soft), "the named rules don't actually conflict"
+    for i, dropped in enumerate(result.conflict):
+        assert feasible(result.conflict[:i] + result.conflict[i + 1:] + soft), f"{dropped} isn't needed"
+    if result.nothing_to_schedule:
+        assert feasible(result.conflict + soft, allow_empty=True), "'nothing to schedule' isn't needed"
+
+
+@given(problem=problems())
+def test_a_reported_conflict_really_conflicts_and_every_part_is_needed(problem):
+    _check_conflict(*problem)
+
+
+@pytest.mark.parametrize("kind", ALL_KINDS)
+@settings(max_examples=40)
+@given(data=st.data())
+def test_conflicts_involving_every_constraint_kind_are_minimal(kind, data):
+    _check_conflict(*data.draw(problems(kind=kind)))

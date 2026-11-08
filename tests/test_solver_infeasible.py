@@ -159,4 +159,75 @@ def test_no_hard_rules_involved_still_explains_that_nothing_fits():
     result = checked_solve(cat, [MustTake(course="A", strength="soft")])
     assert result.schedules == []
     assert result.conflict == []
+    assert result.nothing_to_schedule
     assert result.note
+
+
+# ---- dropping a course request must not hide it from the conflict ----
+# Dropping a must_take used to remove the course from the schedulable set as well, which could make
+# the request *harder* (only excluded courses left, and a schedule is never empty). The search then
+# blamed the wrong rule. Now the full request's courses stay available while searching.
+
+def sunday_b_monday_a():
+    return catalog(course("A", lecture=[grp("1", "Mon 10-12")]), course("B", lecture=[grp("1", "Sun 10-12")]))
+
+
+def test_a_required_course_is_named_rather_than_an_unrelated_exclusion():
+    must_b, sun_off = MustTake(course="B"), DayOff(day="Sun")
+    constraints = [must_b, sun_off, ExcludeCourse(course="A"), MustTake(course="A", strength="soft")]
+    result = checked_solve(sunday_b_monday_a(), constraints)
+    assert result.conflict == [must_b, sun_off]
+    assert not result.nothing_to_schedule
+    assert "B" in result.note and "Sun" in result.note and "exclude" not in result.note
+
+
+def test_a_hard_pool_is_named_rather_than_an_unrelated_exclusion():
+    pool, sun_off = TakeNOf(courses=["B"], n=1), DayOff(day="Sun")
+    constraints = [pool, sun_off, ExcludeCourse(course="A"), MustTake(course="A", strength="soft")]
+    assert checked_solve(sunday_b_monday_a(), constraints).conflict == [pool, sun_off]
+
+
+def test_a_course_that_can_never_be_taken_is_named_alongside_another_required_course():
+    # found by Hypothesis: A's lecture and lab meet at the same time, so A alone is impossible
+    a = course("A", credits=2, lecture=[grp("1", "Sun 8-9", instructor="Cohen")],
+               lab=[grp("1", "Sun 8-9", instructor="Cohen")])
+    cat = catalog(a, course("B", credits=2, lecture=[grp("1", "Sun 8-9", instructor="Cohen")]),
+                  course("C", credits=2, lecture=[grp("1", "Sun 8-9", instructor="Cohen")]))
+    constraints = must("A", "B") + [MustTake(course="A", strength="soft", weight=1)]
+    result = checked_solve(cat, constraints)
+    assert result.conflict == must("A")
+    assert not result.nothing_to_schedule
+
+
+def test_with_separate_conflicts_the_one_naming_requested_courses_is_preferred():
+    # A and B always clash, and the credit range is impossible on its own: both are conflicts.
+    # Course requests are tried for dropping last, so the conflict names the courses the user asked for.
+    cat = catalog(course("A", lecture=[grp("1", "Sun 10-12")]), course("B", lecture=[grp("1", "Sun 11-13")]))
+    constraints = must("A", "B") + [MinCredits(n=6), MaxCredits(n=3)]
+    assert checked_solve(cat, constraints).conflict == must("A", "B")
+
+
+def test_excluding_every_wanted_course_says_nothing_is_left_to_schedule():
+    excl_a, excl_b = ExcludeCourse(course="A"), ExcludeCourse(course="B")
+    constraints = [MustTake(course="A", strength="soft"), MustTake(course="B", strength="soft"), excl_a, excl_b]
+    result = checked_solve(sunday_b_monday_a(), constraints)
+    assert result.conflict == [excl_a, excl_b]
+    assert result.nothing_to_schedule
+    assert "exclude A + exclude B" in result.note and "no course" in result.note
+
+
+def test_a_single_rule_leaving_nothing_to_schedule_says_so():
+    excl_a = ExcludeCourse(course="A")
+    result = checked_solve(sunday_b_monday_a(), [MustTake(course="A", strength="soft"), excl_a])
+    assert result.conflict == [excl_a]
+    assert result.nothing_to_schedule
+    assert "exclude A" in result.note and "no course" in result.note
+
+
+def test_hard_rules_that_conflict_by_themselves_do_not_blame_the_empty_schedule_rule():
+    result = checked_solve(friday_only(), must("CS201") + [DayOff(day="Fri")])
+    assert not result.nothing_to_schedule
+
+
+def test_a_solvable_request_reports_nothing_to_schedule_as_false():
+    assert not checked_solve(friday_only(), must("CS201")).nothing_to_schedule

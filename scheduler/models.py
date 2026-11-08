@@ -329,3 +329,6 @@ class SolveResult(BaseModel):
     schedules: list[Schedule]  # best first
     note: str | None = None  # e.g. "Only 2 possible schedules match your constraints"
     conflict: list[Constraint] = []  # a minimal set that can't all hold; empty unless nothing was found
+    # True when the implicit "a schedule has at least one course" rule is part of the conflict,
+    # e.g. "exclude A + exclude B" leave no course to schedule
+    nothing_to_schedule: bool = False
