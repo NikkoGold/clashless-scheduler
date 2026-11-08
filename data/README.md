@@ -1,6 +1,6 @@
 # Sample data
 
-`sample_courses.json` is a hand-written dummy catalog for experimenting with the scheduler. The courses and times are made up. It is also used for manual runs, the smoke test and parser name matching. **Tests never assert exact results against it** — correctness tests use tiny catalogs from `tests/helpers/catalog_builder.py`.
+`sample_courses.json` is a hand-written dummy catalog for experimenting with the scheduler. The courses and times are made up. It is also used for manual runs, the smoke test and parser name matching. Correctness tests use tiny catalogs from `tests/helpers/catalog_builder.py`. **The only exact results asserted against this file are the documented counts below**, in `tests/test_end_to_end.py` (real-use scenarios: text → parser → solver), plus parser phrases marked `catalog: sample`. If you edit the file, re-check the counts and update both.
 
 8 required courses (`"required": true`, which become default `must_take` constraints; 22 credits) + 8 electives. Week is the default Sun–Fri.
 

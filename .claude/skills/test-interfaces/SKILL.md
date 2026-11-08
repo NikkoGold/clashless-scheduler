@@ -7,6 +7,9 @@ description: Test-first workflow for the scheduler's user-facing layers — the 
 
 Follow [../test-core-logic/conventions.md](../test-core-logic/conventions.md). Build input catalogs with the catalog builder and write them to `tmp_path` when a file is needed. Force `--offline` / `LLM_PROVIDER=none` so nothing hits the network.
 
+## End-to-end scenarios (required in steps 5 and 6)
+`tests/test_end_to_end.py` runs real-use scenarios on the sample catalog (text → parser → picker defaults → solver). Each interface step must run **the same scenarios through its own interface**: the CLI in step 5 (`main(argv)` on `data/sample_courses.json`), the API in step 6 (`TestClient`: catalog → parse → solve). Assert the same outcomes (the documented counts, the ZGC conflict, unparsed fragments reported, every rule in the breakdown). Until the UI exists, these are the only tests that simulate real use.
+
 ## CLI (`test_cli.py`)
 Call `main(argv)` directly and capture output with `capsys`; assert on exit code and text.
 - Basic run prints K schedules; `--top N` changes the count.
@@ -18,6 +21,7 @@ Call `main(argv)` directly and capture output with `capsys`; assert on exit code
 - `setup`: choosing a provider writes `.env` (to `tmp_path`); "continue offline" writes `LLM_PROVIDER=none` and the first-run notice stops appearing.
 - Unparsed fragments are printed as warnings.
 - Infeasible input prints the conflict explanation, non-zero exit.
+- A timed-out result prints its note and the results it found (simulate with the solver's `_clock`, as in `tests/test_solver_time_limit.py`).
 - `--export out.xlsx` writes the file (checked as below).
 - `--review`: feed edited text via monkeypatched `input`, confirm re-parse happens.
 

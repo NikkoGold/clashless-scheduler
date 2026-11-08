@@ -88,3 +88,8 @@ Key rules:
   - any lab can go with any lecture
   - `attendance_required: false` doesn't change the result
 - New constraint kinds or parser patterns need tests in the same change.
+- **Guard against blind spots** (each of these once hid a real bug):
+  - Generate combinations instead of hand-picking examples (parser verbs × list forms × both catalogs).
+  - Parser phrases run against the realistic sample catalog too (`catalog: sample`), not only the tidy phrase catalog.
+  - Hypothesis strategies must vary everything the code depends on: mixed hard/soft requests, different weeks, constraint times off the hour. Widen them when a feature adds a new dimension.
+- **End-to-end scenarios** (`tests/test_end_to_end.py`): text → parser → picker defaults → solver on the sample catalog. Steps 5 and 6 must add the same scenarios through the CLI and the API.
