@@ -78,7 +78,7 @@ FILLER = {"please", "thanks", "thank", "you", "i", "am", "would", "like", "to", 
 LIST_WORDS = {"and", "or"}
 EXPLICIT_NAME_VERBS = {"prefer", "avoid", "never", "take", "include", "add", "drop", "skip", "exclude", "remove"}
 
-_TIME = r"(?:noon|midday|midnight|\d{1,2}(?:[:.]\d{2})?(?:\s?(?:am|pm))?)"
+_TIME = r"(?:noon|midday|\d{1,2}(?:[:.]\d{2})?(?:\s?(?:am|pm))?)"
 _T = rf"(?<![\w:.])({_TIME})(?![\w:])"
 RANGE_PATTERNS = [
     re.compile(rf"\bbetween\s+{_T}\s+and\s+{_T}"),
@@ -320,6 +320,7 @@ class _Days:
 def _take_days(s: str, catalog: Catalog) -> tuple[str, _Days | None]:
     """Pull out one run of day words ("on Mon and Wed", "except Tue", "every day"), if there is one."""
     s = re.sub(r"\b(?:every|each) day\b", " everyday ", s)
+    s = re.sub(r"\b(?:everyday|daily)\s+(?=(?:except|but)\s)", " ", s)  # "every day except Tue" = "except Tue"
     words = s.split()
     run: list[int] = []
     for i, w in enumerate(words):
@@ -336,8 +337,6 @@ def _take_days(s: str, catalog: Catalog) -> tuple[str, _Days | None]:
     except_ = lead > 0 and words[lead - 1] in ("except", "but")  # "except Tue", "except on Tue"
     if except_:
         lead -= 1
-        if lead > 0 and words[lead - 1] == "every":
-            lead -= 1
 
     picked: set[str] = set()
     is_all = False
@@ -372,15 +371,14 @@ def _take_days(s: str, catalog: Catalog) -> tuple[str, _Days | None]:
 class _Lit:
     minutes: int
     suffix: str | None  # "am", "pm", or None
-    exact: bool  # noon, midnight, or a 24-hour time (13:00 and up, or 0)
+    exact: bool  # noon, or a 24-hour time (13:00 and up, or 0)
 
 
 def _lit(text: str) -> _Lit:
     text = text.replace(" ", "")
     if text in ("noon", "midday"):
         return _Lit(12 * 60, None, True)
-    if text == "midnight":
-        return _Lit(0, None, True)
+    # "midnight" isn't read as a time: as 00:00, "no classes after midnight" would ban every class
     m = re.fullmatch(r"(\d{1,2})(?:[:.](\d{2}))?(am|pm)?", text)
     if not m:
         raise _Unparsed("invalid_time")

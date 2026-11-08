@@ -253,6 +253,26 @@ def test_lec_means_lecture_when_the_catalog_has_lectures():
     assert result.constraints == [AvoidGroup(course="OLD", component="lecture", group="1", strength="soft")]
 
 
+# ---- names that are equally close ----
+
+def test_two_names_equally_close_to_a_typo_are_ambiguous():
+    cat = catalog(
+        course("A", lecture=[grp("1", "Mon 10-12", instructor="Rosenberg")]),
+        course("B", lecture=[grp("1", "Tue 10-12", instructor="Rosenburg")]),
+    )
+    result = RuleParser().parse("prefer Rosenbirg", cat)
+    assert result.constraints == []
+    assert [f.model_dump() for f in result.unparsed] == [
+        {"text": "prefer Rosenbirg", "reason": "ambiguous_name", "candidates": ["Rosenberg", "Rosenburg"]}
+    ]
+
+
+def test_weekdays_in_a_week_of_only_fri_and_sat_is_not_understood():
+    cat = catalog(course("A", lecture=[grp("1", "Fri 10-12")]), week=["Fri", "Sat"])
+    result = RuleParser().parse("no classes before 10 on weekdays", cat)
+    assert result.constraints == [] and [f.reason for f in result.unparsed] == ["not_understood"]
+
+
 # ---- spans ----
 
 def test_each_parsed_clause_is_a_span_with_its_original_text_in_order(phrase_catalog):

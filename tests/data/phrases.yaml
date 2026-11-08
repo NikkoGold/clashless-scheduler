@@ -444,3 +444,47 @@
   catalog: sample
   rules: {constraints: [{kind: exclude_course, course: XPA}, {kind: exclude_course, course: HEW}], unparsed: []}
   tags: [names, splitting]
+
+# ---- paths the coverage run found untested ----
+- text: "no classes before 10 every day except Tuesday"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Sun, Mon, Wed, Thu, Fri]}], unparsed: []}
+  tags: [days]
+- text: "no classes after midnight"  # 00:00 would ban every class; better left to the user to rephrase
+  rules: {constraints: [], unparsed: [{text: "no classes after midnight", reason: not_understood}]}
+  tags: [time]
+- text: "free 7-9"  # a bare start isn't moved to pm if that puts it after the end
+  rules: {constraints: [{kind: free_block, start: "07:00", end: "09:00"}], unparsed: []}
+  tags: [free, time]
+- text: "no classes before 10:75"
+  rules: {constraints: [], unparsed: [{text: "no classes before 10:75", reason: invalid_time}]}
+  tags: [time]
+- text: "no classes after 13pm"
+  rules: {constraints: [], unparsed: [{text: "no classes after 13pm", reason: invalid_time}]}
+  tags: [time]
+- text: "at most 9 days"  # more days than a week has: not a valid rule
+  rules: {constraints: [], unparsed: [{text: "at most 9 days", reason: not_understood}]}
+  tags: [load]
+- text: "take Cohen"  # take/drop only apply to courses
+  rules: {constraints: [], unparsed: [{text: "take Cohen", reason: not_understood}]}
+  tags: [names]
+- text: "prefer Prof."  # a title with no name
+  rules: {constraints: [], unparsed: [{text: "prefer Prof.", reason: not_understood}]}
+  tags: [names]
+- text: "no classes on Monday before 10 on Friday"  # two separate day mentions
+  rules: {constraints: [], unparsed: [{text: "no classes on Monday before 10 on Friday", reason: not_understood}]}
+  tags: [days, no-guessing]
+- text: "no classes before 10 every day and Friday"  # splits: the first part is clear, "Friday" alone isn't
+  rules: {constraints: [{kind: no_class_before, time: "10:00"}], unparsed: [{text: "Friday", reason: not_understood}]}
+  tags: [days, no-guessing]
+- text: "keep 12-13 free before 10"
+  rules: {constraints: [], unparsed: [{text: "keep 12-13 free before 10", reason: not_understood}]}
+  tags: [free, no-guessing]
+- text: "prefer CS101 lab"  # no group number
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 lab", reason: unknown_name, candidates: [CS101]}]}
+  tags: [names, groups]
+- text: "prefer Cohen lab 11"  # a group belongs to a course, not an instructor
+  rules: {constraints: [], unparsed: [{text: "prefer Cohen lab 11", reason: not_understood}]}
+  tags: [names, groups]
+- text: "prefer CS101 lab 11 Algorithms"
+  rules: {constraints: [], unparsed: [{text: "prefer CS101 lab 11 Algorithms", reason: not_understood}]}
+  tags: [names, groups, no-guessing]
