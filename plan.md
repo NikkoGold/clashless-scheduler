@@ -1,7 +1,7 @@
 # Class Scheduler — Plan
 
 ## Context
-A new project in the empty `scheduler/` folder. The user provides (1) a JSON file of courses and their section times, and (2) constraints and preferences in plain language, such as "no classes before 10 on Mondays", "I want Fridays off" or "keep lunch free". The app turns the plain-language input into structured constraints, using a configurable LLM (Gemini Flash-Lite by default) or a rule-based fallback parser for offline use or to save money. It then finds the best schedules that avoid clashes and shows them in a local web UI.
+A new project in the empty `scheduler/` folder. The user provides (1) a JSON file of courses and their section times, and (2) constraints and preferences in plain language, such as "no classes before 10 on Mondays", "I want Fridays off" or "keep lunch free". The app turns the plain-language input into structured constraints. The rule-based parser always runs first, and a configurable LLM (Gemini Flash-Lite recommended) is only called for text the rules can't fully understand. No model or key ships with the app: the user sets one up on first run, or chooses a more limited offline mode that uses the rules alone. It then finds the best schedules that avoid clashes and shows them in a local web UI.
 
 Stack: Python, FastAPI backend, a lightweight HTML/JS frontend (no build step), OR-Tools CP-SAT solver, Pydantic models.
 
@@ -13,6 +13,10 @@ plain text ──► PreferenceParser ──► Constraint list (typed, validate
 courses.json ──► Catalog loader (Pydantic) ─────────────────────────────► Solver (CP-SAT) ──► top-K schedules ──► calendar view
 ```
 The key design point is that the LLM's only job is to produce a list of typed constraints. Solving is deterministic and never depends on the LLM. Both parsers produce the same output format.
+
+**Rules first, LLM only when needed.** Every parse tries the RuleParser on the whole text first. If it understands all of it, the LLM is not called. The LLM gets the whole text only when something is left unparsed and an LLM is set up. This keeps calls (and free-tier limits) for the requests that need them. See Parsing → Router.
+
+**First-run setup; offline works without it.** No model or API key ships with the app. On first run (no LLM configured and no earlier choice saved), the web UI shows a setup panel and the CLI offers `python -m scheduler setup`: pick a provider (Gemini recommended), paste a key, and it is written to `.env`. Choosing **Continue offline** saves `LLM_PROVIDER=none` so the prompt doesn't come back, and the user is told plainly what that means: only simple, direct phrasing is understood ("no classes before 10", "Fridays off"), and anything else is listed as not understood. While offline, the parser label says "rules (offline)" and the unparsed list repeats that setting up an LLM would let free-form text through. Setup can be reopened at any time.
 
 **The review step is optional.** It's a "Review constraints before solving" checkbox in the UI, or the `--review` flag in the CLI. When it's on, the parsed constraints are shown as editable chips and solving waits for you to confirm. When it's off, the app parses and solves in one step, but the constraints it used are still shown next to the results. In both modes, anything the parser didn't understand is always shown (see Parsing).
 
@@ -35,12 +39,13 @@ scheduler/
     solver.py               # CP-SAT model, top-K enumeration, scoring breakdown
     parsing/
       base.py               # PreferenceParser protocol, ParseResult (constraints + unparsed fragments)
-      rules.py              # offline fallback parser
+      rules.py              # rule parser: always runs first; the only parser in offline mode
       llm.py                # LLMParser: prompt + JSON-schema output + validation/repair
       providers/            # gemini.py (default), anthropic.py, openai.py, ollama.py — each a small adapter
-      router.py             # choose LLM or rules from config, budget and errors; caching
-    config.py               # reads .env
-    cli.py                  # python -m scheduler courses.json "prefs..." [--review] [--pick 5:CS101,CS102,...] [--no-required] [--parser rules|llm] [--top 5] [--export out.xlsx]
+      router.py             # whole-text cache → rules first → LLM only if needed and configured (budget, errors → rules result)
+    config.py               # reads .env; writes it from first-run setup
+    cli.py                  # python -m scheduler courses.json "prefs..." [--review] [--pick 5:CS101,CS102,...] [--no-required] [--offline] [--top 5] [--export out.xlsx]
+                            # python -m scheduler setup   (choose provider + key, or offline)
     web/
       app.py                # FastAPI: /api/catalog, /api/parse, /api/solve; serves static files
       static/index.html, app.js, style.css   # upload, preference box, constraint chips, weekly grid
@@ -119,7 +124,14 @@ A constraint naming a course, component, group or instructor that isn't in the c
 - **LLMParser**: the system prompt includes the constraint JSON schema plus the catalog's course IDs, names and instructors, so the model can resolve phrases like "the algorithms course" or "Prof. Levi". The parser asks for JSON output that follows the schema (the native structured-output mode of Gemini, OpenAI or Anthropic tool use, or Ollama's `format`). Output is validated with Pydantic; if validation fails, the parser retries once and includes the error. Anything the model couldn't map goes in `unparsed` and is shown to the user.
 - **RuleParser** (deliberately simple): splits the text into clauses on `.`, `,`, `;` and "and", then matches each clause against a small set of patterns for times ("before 10", "after 4pm"), days ("fridays", "sun"), keywords ("off", "lunch", "gap", "compact", "avoid", "prefer") and fuzzy matches against course and instructor names (`difflib`). It also uses the hard/soft keyword rules. It doesn't guess: any clause it can't fully match is returned as-is in `unparsed`.
 - **Unparsed feedback (both parsers)**: `ParseResult.unparsed` is a list of the original text fragments. The UI highlights them under the text box ("Couldn't understand: *'I'm not a morning person'*. Try rephrasing, e.g. 'no classes before 10'") so you can edit the request and parse again. The CLI prints them as warnings; with `--review` it lets you edit the text and parse again.
-- **Router**: uses the rule parser when `LLM_ENABLED=false`, when no key is set, when a network or API error occurs, or when the daily call limit is reached. It caches results by a hash of the text and catalog, so re-solving costs nothing. The UI shows which parser was used.
+- **Router** (rules first, always):
+  1. **Whole-text cache**, keyed by a hash of the text and catalog, so re-solving, changing K, toggling courses or going back to earlier text costs nothing.
+  2. **RuleParser on the whole text.** If nothing is left unparsed, that is the result and no LLM call is made.
+  3. Otherwise, **if an LLM is set up** and the daily limit isn't reached, the **whole** text goes to the LLM (never just the leftover clauses, because the meaning can depend on the rest of the text, and a partial call would cost nearly as much because the fixed prompt dominates).
+  4. If no LLM is set up (offline), the limit is reached, or the call fails, the rules result is used, its unparsed fragments are shown, and the user is told why the LLM wasn't used.
+  - The result records which path was used (`cache`, `rules`, `llm`, or `rules (offline)` / `rules (LLM unavailable: <reason>)`) and the UI and CLI show it.
+  - Editing constraints through the review chips never re-parses, so deleting or reweighting a constraint costs nothing.
+  - **Considered and dropped:** a phrase-level cache that reused cached parts of earlier LLM answers. It only saved a call when an edit was entirely known clauses, mostly deletions, which the chips already handle for free. It needed verbatim source spans from the LLM (more tokens, more failed validations, each one costing a retry call) and could silently misread meaning that spans clauses. If call budgets turn out to be tight in real use, count parses by path locally and revisit with real numbers.
 
 ## Config (.env)
 ```
@@ -131,7 +143,7 @@ OPENAI_API_KEY=...
 OLLAMA_URL=http://localhost:11434
 LLM_MAX_CALLS_PER_DAY=50
 ```
-Provider SDKs are optional extras and are imported only when that provider is selected.
+Provider SDKs are optional extras and are imported only when that provider is selected. With no `.env`, or `LLM_PROVIDER=none`, the app runs offline with the rule parser alone; first-run setup writes this file.
 
 ## Solver (OR-Tools CP-SAT)
 - One boolean per (course, component, group), plus one boolean per course meaning "taking this course". Selected courses must pick exactly one group per component.
@@ -163,10 +175,10 @@ A single page:
 1. `models.py` and `catalog.py` with sample data (validation, whole hours, merging), then the solver with no-overlap and `must_take` only, returning a top-K list from the start (never repeated, "only N possible" note; unranked until step 2), plus tests.
 2. All other constraint kinds in the solver (hard and soft), scoring and ranking, and conflict explanation.
 3. The rule parser and its tests (a set of test phrases with expected constraints).
-4. Provider adapters, the LLM parser, and the router with fallback, budget and cache.
-   - **Before starting, discuss how to keep each call as cheap as possible.** The app should work for as many people as possible, including those on free tiers or with tight limits.
-5. The CLI (`--review`, `--pick`, `--no-required`, `--parser`).
-6. The FastAPI endpoints and the frontend (search, pick-N, review toggle, unparsed highlighting).
+4. Provider adapters, the LLM parser, the router (whole-text cache → rules first → LLM only if needed; budget; fallback with the reason shown), and config reading/writing `.env` for setup.
+   - **Before starting, discuss how to keep each call as cheap as possible.** The app should work for as many people as possible, including those on free tiers or with tight limits. Also decide whether the LLM should return source spans (useful for showing which words produced each chip, but more output tokens and more failed validations).
+5. The CLI (`--review`, `--pick`, `--no-required`, `--offline`), plus `python -m scheduler setup` and the first-run offer and offline notice.
+6. The FastAPI endpoints and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label).
 7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.
 
 ## Deferred / out of scope
@@ -175,5 +187,5 @@ A single page:
 - Travel time between rooms and online vs in-person: intentionally ignored.
 
 ## Verification
-- `pytest`: catalog validation; the solver on small hand-made catalogs (known best answer, infeasible cases explained, top-K results all different; a catalog with only 2 valid schedules and K=5 returns exactly 2 with the "only 2 possible" note; back-to-back 10–12 then 12–14 is allowed; a group with several sessions is all-or-nothing, so a clash with only its second session rules out the whole group; pick-N where the pool equals N takes all courses; any lab is allowed with any lecture; two labs at identical times merge into one option and don't produce duplicate-looking results; `attendance_required: false` is accepted but doesn't change the solution; times not on the hour are rejected); each RuleParser phrase test; the LLM parser using a mocked provider (valid output, invalid output followed by retry, and fallback on error).
+- `pytest`: catalog validation; the solver on small hand-made catalogs (known best answer, infeasible cases explained, top-K results all different; a catalog with only 2 valid schedules and K=5 returns exactly 2 with the "only 2 possible" note; back-to-back 10–12 then 12–14 is allowed; a group with several sessions is all-or-nothing, so a clash with only its second session rules out the whole group; pick-N where the pool equals N takes all courses; any lab is allowed with any lecture; two labs at identical times merge into one option and don't produce duplicate-looking results; `attendance_required: false` is accepted but doesn't change the solution; times not on the hour are rejected); each RuleParser phrase test; the LLM parser using a mocked provider (valid output, invalid output followed by retry, and fallback on error); the router never calls the LLM when the rules parse everything, calls it with the whole text when something is unparsed, and runs offline with no `.env` at all.
 - Manual: `uvicorn scheduler.web.app:app --reload`, load `data/sample_courses.json`, enter "no classes before 10, prefer Cohen, keep 12-13 free" (adding "fridays off" should report the ZGC conflict; see `data/README.md`), parse once with `LLM_PROVIDER=gemini` and once with `none`, and check that the chips and schedules make sense.

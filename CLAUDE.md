@@ -1,7 +1,7 @@
 # Class Scheduler
 
 ## Goal
-Build weekly class schedules from a JSON catalog of courses and section times, plus the user's constraints and preferences written in plain language. An LLM (default: Gemini Flash-Lite, configurable) or an offline rule-based parser turns the text into structured constraints. A CP-SAT solver returns the top-K schedules with no clashes. The app is mainly used through a local web UI, and there is also a CLI.
+Build weekly class schedules from a JSON catalog of courses and section times, plus the user's constraints and preferences written in plain language. A rule-based parser turns the text into structured constraints, and a configurable LLM (Gemini Flash-Lite recommended) is called only for text the rules can't fully parse. No model or key ships with the app: first-run setup configures one, or the user continues in a more limited offline mode (rules only). A CP-SAT solver returns the top-K schedules with no clashes. The app is mainly used through a local web UI, and there is also a CLI.
 
 The full design is in [plan.md](plan.md). Keep this file and plan.md in sync when the design changes.
 
@@ -11,23 +11,24 @@ Python 3.11+, FastAPI and uvicorn, a plain HTML/JS/CSS frontend (no build step),
 ## Architecture
 ```
 plain text ──► parsing/router ──► ParseResult{constraints, unparsed} ──► (optional review) ──► solver ──► top-K schedules ──► UI / CLI / export
-                 ├─ LLMParser (providers/: gemini, anthropic, openai, ollama)
-                 └─ RuleParser (offline fallback)
+                 ├─ RuleParser (always first; the only parser offline)
+                 └─ LLMParser (providers/: gemini, anthropic, openai, ollama), only if rules leave text unparsed
 courses.json ──► catalog (Pydantic) ─────────────────────────────────────────────────────────► solver
 ```
 - `scheduler/models.py`: Catalog and Constraint schemas. These are the single source of truth for both parsers and the solver.
 - `scheduler/catalog.py`: loads and checks the JSON, time helpers, merges groups that meet at identical times.
 - `scheduler/constraints.py`: the constraint kinds, and how each one is added to the CP-SAT model.
 - `scheduler/solver.py`: builds the model, top-K enumeration, explains unsolvable cases, score breakdown.
-- `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (choosing a parser, fallback, budget, cache).
-- `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`).
-- `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--no-required] [--parser rules|llm] [--top 5] [--export out.xlsx]`.
+- `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (whole-text cache → rules first → whole text to the LLM only if something is unparsed and an LLM is set up; budget; fallback with the reason shown; records the path used). A phrase-level cache was considered and dropped; see plan.md Parsing → Router.
+- `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) and writes it from first-run setup. No `.env` means offline.
+- `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--no-required] [--offline] [--top 5] [--export out.xlsx]`, and `python -m scheduler setup`.
 - `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
 
 ## Core rules (don't break these)
 - **The user is always fully informed about a schedule they're shown.** Every result shows every rule, hard and soft, as met or broken. Trade-offs are stated ("Register for 11, or 12, which breaks X instead of Y"), and when nothing fits, the conflicting rules are named. Every interface must carry this through.
 - **The LLM only produces constraints.** It never decides the schedule. The solver is deterministic.
 - **Both parsers return the same `ParseResult`.** Anything not understood goes in `unparsed` as the original text and is always shown to the user. The rule parser never guesses.
+- **Rules first, always.** The LLM is never called when the rule parser understands the whole text. Offline mode (no LLM set up) must work fully, and it tells the user it's limited.
 - **Back-to-back classes are fine.** The overlap test is `a.start < b.end and b.start < a.end`. There is no travel time and no online/in-person handling.
 - **Exactly one group per component** for each selected course. Any lab can go with any lecture (the `parent` field is stored but not enforced).
 - **Top-K never repeats.** Each solution found is ruled out before solving again. Stop at K solutions or when there are none left, and report "only N possible". Groups with identical times are merged first, so no two results look the same on the grid.
@@ -47,7 +48,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 ```powershell
 python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -e ".[dev,gemini]"        # other extras: anthropic, openai
-copy .env.example .env                 # then fill in the key; LLM_PROVIDER=none for offline
+python -m scheduler setup              # choose a provider + key, or continue offline (or copy .env.example .env)
 uvicorn scheduler.web.app:app --reload
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free"
 pytest -q                              # offline suite

@@ -5,7 +5,7 @@ description: Test-first workflow for the scheduler's user-facing layers — the 
 
 # CLI, API and export tests (build steps 5–7)
 
-Follow [../test-core-logic/conventions.md](../test-core-logic/conventions.md). Build input catalogs with the catalog builder and write them to `tmp_path` when a file is needed. Force `--parser rules` / `LLM_ENABLED=false` so nothing hits the network.
+Follow [../test-core-logic/conventions.md](../test-core-logic/conventions.md). Build input catalogs with the catalog builder and write them to `tmp_path` when a file is needed. Force `--offline` / `LLM_PROVIDER=none` so nothing hits the network.
 
 ## CLI (`test_cli.py`)
 Call `main(argv)` directly and capture output with `capsys`; assert on exit code and text.
@@ -13,7 +13,9 @@ Call `main(argv)` directly and capture output with `capsys`; assert on exit code
 - "Only N possible" message when fewer than K exist.
 - `--pick 2:CS101,CS102,CS103` → exactly 2 of the pool chosen; pool < N → clear error, non-zero exit.
 - Courses with `"required": true` are scheduled by default (as `must_take`); `--no-required` drops them.
-- `--parser rules|llm` is honoured and the parser used is printed.
+- `--offline` never calls the LLM even when one is configured; the parser path used is always printed.
+- No `.env`: runs offline, prints the one-line "offline mode is limited; run `python -m scheduler setup`" notice, and still solves.
+- `setup`: choosing a provider writes `.env` (to `tmp_path`); "continue offline" writes `LLM_PROVIDER=none` and the first-run notice stops appearing.
 - Unparsed fragments are printed as warnings.
 - Infeasible input prints the conflict explanation, non-zero exit.
 - `--export out.xlsx` writes the file (checked as below).
@@ -32,6 +34,8 @@ Use FastAPI `TestClient`.
 - **JSON**: export → reload gives an equal solution.
 
 ## Manual checklist (report in the summary, don't automate)
+- First run with no `.env`: setup panel appears; "Continue offline" explains the limits, dismisses the panel for good, and setup can be reopened.
+- Parser-path label shown (`rules`, `llm`, `rules (offline)`, `rules (LLM unavailable: …)`).
 - Course search filters by id, name, instructor while typing.
 - required / in pool / off toggle and "pick N" box.
 - Review checkbox on → editable chips + Solve; off → straight to results.

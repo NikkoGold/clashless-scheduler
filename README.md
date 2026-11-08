@@ -2,7 +2,7 @@
 
 Give it a JSON file of courses and section times, and describe your preferences in plain language ("no classes before 10 on Mondays", "Fridays off", "keep lunch free"). It returns the best clash-free weekly schedules.
 
-- Preferences are turned into typed constraints by an LLM (Gemini Flash-Lite by default, configurable) or by an offline rule-based parser.
+- Preferences are turned into typed constraints by a built-in rule parser first. An LLM of your choice (Gemini Flash-Lite recommended) is only called when the rules can't understand your text.
 - Schedules are solved deterministically with OR-Tools CP-SAT. The LLM never affects solving.
 - A local web UI shows the top results on a weekly grid, with PDF, Excel and JSON export.
 
@@ -14,10 +14,10 @@ See [plan.md](plan.md) for the full design.
 python -m venv .venv
 .venv\Scripts\activate          # Windows; on macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev,gemini]"  # or anthropic / openai; leave it out for rules-only
-copy .env.example .env          # then add your API key
+python -m scheduler setup       # choose a provider and paste your key, or continue offline
 ```
 
-Set `LLM_ENABLED=false` or `LLM_PROVIDER=none` to run fully offline with the rule parser.
+No model or key comes with the app. The web UI offers the same setup on first run. **Offline mode** needs no setup and works fully, but it only understands simple, direct phrasing ("no classes before 10", "Fridays off"). Anything else is listed as not understood so you can rephrase it. You can run setup again at any time, or set `LLM_PROVIDER=none` in `.env` to go offline.
 
 ## Usage
 
@@ -29,7 +29,7 @@ uvicorn scheduler.web.app:app --reload
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free" --top 5
 ```
 
-CLI options: `--review`, `--pick N:CS101,CS102,...`, `--no-required`, `--parser rules|llm`, `--top N`, `--export out.xlsx`.
+CLI options: `--review`, `--pick N:CS101,CS102,...`, `--no-required`, `--offline`, `--top N`, `--export out.xlsx`.
 
 ## Courses file
 
