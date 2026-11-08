@@ -1,5 +1,6 @@
 """CP-SAT model, top-K enumeration, scoring breakdown, conflict explanation."""
 import itertools
+import time
 
 from ortools.sat.python import cp_model
 
@@ -19,39 +20,100 @@ from scheduler.constraints import (
 from scheduler.models import BreakdownItem, Catalog, Choice, Constraint, Schedule, SolveResult
 
 
+# A whole request (all top-K solves plus any conflict search) gets this long. Realistic requests
+# (up to ~10 courses, small K) take seconds; the UI should show a loading indicator meanwhile.
+TIME_LIMIT_SECONDS = 180
+
+_clock = time.monotonic  # replaced in tests to hit the limit at an exact stage
+
+
+class _TimedOut(Exception):
+    pass
+
+
+class _Deadline:
+    def __init__(self, seconds: float):
+        self.at = _clock() + seconds
+
+    def run(self, solver, model, any_solution: bool = False) -> int:
+        """Solve with the time that's left; OPTIMAL or INFEASIBLE, or _TimedOut if the limit cut it short.
+
+        `any_solution`: the caller only asks whether a solution exists, so FEASIBLE is an answer too.
+        """
+        left = self.at - _clock()
+        if left <= 0:
+            raise _TimedOut
+        solver.parameters.max_time_in_seconds = left
+        status = solver.solve(model)
+        if status in (cp_model.OPTIMAL, cp_model.INFEASIBLE) or (any_solution and status == cp_model.FEASIBLE):
+            return status
+        if _clock() >= self.at:
+            raise _TimedOut
+        # stopped early for some other reason: a result not proven best could be ranked wrongly
+        raise RuntimeError(f"solver stopped with status {status}")
+
+
 def solve(catalog: Catalog, constraints: list[Constraint], k: int = 5) -> SolveResult:
-    """Up to k distinct clash-free schedules, best first."""
+    """Up to k distinct clash-free schedules, best first.
+
+    Stops at TIME_LIMIT_SECONDS: results already found are kept (each was proven best in turn),
+    `timed_out` is set, and the note says what's unknown. Nothing unproven is claimed.
+    """
     if k < 1:
         raise ValueError(f"k must be at least 1, got {k}")
     check_references(catalog, constraints)
     if not candidate_courses(constraints):
         raise ValueError("no courses to schedule: add a must_take or take_n_of (or mark courses required)")
 
+    deadline = _Deadline(TIME_LIMIT_SECONDS)
     state = _build(catalog, constraints)
     if state.costs:
         state.model.minimize(sum(state.costs))
 
     solver = _solver()
     schedules = []
-    while len(schedules) < k:
-        status = solver.solve(state.model)
-        if status == cp_model.INFEASIBLE:
-            break
-        if status != cp_model.OPTIMAL:
-            # a result not proven best could be ranked wrongly, so don't show it as if it were
-            raise RuntimeError(f"solver stopped with status {solver.status_name(status)}")
-        chosen = [p for p in state.placed if solver.boolean_value(p.var)]
-        schedules.append(_schedule(chosen, catalog, constraints))
-        # rule out this exact combination, and nothing else: a larger schedule containing it is still different
-        state.model.add_bool_or([~p.var if solver.boolean_value(p.var) else p.var for p in state.placed])
+    proven_none = False
+    try:
+        while len(schedules) < k:
+            if deadline.run(solver, state.model) == cp_model.INFEASIBLE:
+                proven_none = not schedules
+                break
+            chosen = [p for p in state.placed if solver.boolean_value(p.var)]
+            schedules.append(_schedule(chosen, catalog, constraints))
+            # rule out this exact combination, and nothing else: a larger schedule containing it is still different
+            state.model.add_bool_or([~p.var if solver.boolean_value(p.var) else p.var for p in state.placed])
+    except _TimedOut:
+        return SolveResult(schedules=schedules, note=_timeout_note(len(schedules)), timed_out=True)
 
-    conflict, nothing_to_schedule = _find_conflict(catalog, constraints) if not schedules else ([], False)
+    conflict, nothing_to_schedule = [], False
+    if proven_none:
+        try:
+            conflict, nothing_to_schedule = _find_conflict(catalog, constraints, deadline)
+        except _TimedOut:
+            return SolveResult(schedules=[], note=_timeout_note(0, proven_none=True), timed_out=True)
     return SolveResult(
         schedules=schedules,
         note=_note(len(schedules), k, conflict, nothing_to_schedule),
         conflict=conflict,
         nothing_to_schedule=nothing_to_schedule,
     )
+
+
+def _limit_text() -> str:
+    minutes, seconds = divmod(TIME_LIMIT_SECONDS, 60)
+    if seconds:
+        return f"{TIME_LIMIT_SECONDS} seconds"
+    return f"{minutes} minute" + ("s" if minutes != 1 else "")
+
+
+def _timeout_note(found: int, proven_none: bool = False) -> str:
+    limit = _limit_text()
+    if proven_none:
+        return (f"No schedule matches your constraints, but finding which rules conflict took longer than {limit}. "
+                "Try removing rules one at a time.")
+    if found:
+        return f"Stopped after {limit}: showing the {found} found; there may be more."
+    return f"Stopped after {limit} without finishing. Try fewer courses or a smaller number of results."
 
 
 def _solver() -> cp_model.CpSolver:
@@ -122,7 +184,9 @@ def _schedule(chosen: list[Placed], catalog: Catalog, constraints: list[Constrai
 COURSE_REQUESTS = ("must_take", "take_n_of")
 
 
-def _find_conflict(catalog: Catalog, constraints: list[Constraint]) -> tuple[list[Constraint], bool]:
+def _find_conflict(
+    catalog: Catalog, constraints: list[Constraint], deadline: _Deadline
+) -> tuple[list[Constraint], bool]:
     """A minimal set of hard constraints that can't all hold, and whether "at least one course" is part of it.
 
     Deletion filter: drop each rule in turn, and leave it out if the rest still can't hold. That only
@@ -144,7 +208,7 @@ def _find_conflict(catalog: Catalog, constraints: list[Constraint]) -> tuple[lis
     def feasible(kept: set[int], need_a_course: bool) -> bool:
         rules = soft + [constraints[i] for i in sorted(kept)]
         state = _build(catalog, rules, candidates=candidates, allow_empty=not need_a_course)
-        return _solver().solve(state.model) != cp_model.INFEASIBLE
+        return deadline.run(_solver(), state.model, any_solution=True) != cp_model.INFEASIBLE
 
     kept = set(hard)
     # if the hard rules hold once an empty schedule is allowed, "at least one course" is part of the conflict

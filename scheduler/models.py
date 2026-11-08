@@ -332,3 +332,6 @@ class SolveResult(BaseModel):
     # True when the implicit "a schedule has at least one course" rule is part of the conflict,
     # e.g. "exclude A + exclude B" leave no course to schedule
     nothing_to_schedule: bool = False
+    # True when the time limit stopped the search: results found before it are kept, and the note
+    # says what is unknown (more results, or which rules conflict)
+    timed_out: bool = False

@@ -352,7 +352,12 @@ def assert_valid_results(result, catalog, constraints, k):
     if schedules:
         assert result.conflict == [], "a solvable result can't report a conflict"
 
-    if 0 < len(schedules) < k:
+    if getattr(result, "timed_out", False):
+        # fewer than k is "there may be more", not "only N possible"
+        note = result.note or ""
+        assert "stopped" in note.lower() or "longer than" in note, f"a timed-out result must say it stopped: {note!r}"
+        assert result.conflict == [], "a timed-out search can't name a conflict it didn't finish finding"
+    elif 0 < len(schedules) < k:
         assert result.note, f"only {len(schedules)} results for k={k} but no note"
         match = re.search(r"\bonly (\d+)\b", result.note, re.IGNORECASE)
         assert match and int(match.group(1)) == len(schedules), f"note doesn't say 'only {len(schedules)}': {result.note!r}"

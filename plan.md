@@ -169,6 +169,7 @@ Provider SDKs are optional extras and are imported only when that provider is se
   - While searching, the full request's courses stay available: dropping a `must_take` or hard pool drops the requirement, not the course. Otherwise dropping one could make the request *harder* (only excluded courses left) and the wrong rule would be blamed.
   - "A schedule has at least one course" is treated as a rule the search can drop. It's tried first, so it's only blamed when needed, and then the result sets `nothing_to_schedule` and says so: "exclude A + exclude B leave no course that can be scheduled". Course requests are tried last, so when there are separate conflicts, the one naming the courses the user asked for is preferred.
 - Each result includes a breakdown of **every** constraint, hard and soft, showing whether it was met or broken and what breaking it cost.
+- **Time limit: 3 minutes per request** (all top-K solves plus any conflict search). Realistic requests (up to ~10 courses, small K) take seconds. If the limit is hit, results already found are kept (each was proven best in turn), `timed_out` is set, and the note says what's unknown: "Stopped after 3 minutes: showing the 2 found; there may be more", or "…without finishing. Try fewer courses or a smaller number of results", or that the conflicting rules couldn't be found in time. Nothing unproven is claimed (never "no schedule works" after a timeout).
 
 ## Web UI
 A single page:
@@ -191,6 +192,7 @@ A single page:
    - **Before starting, discuss how to keep each call as cheap as possible.** The app should work for as many people as possible, including those on free tiers or with tight limits. Also decide whether the LLM should return source spans (useful for showing which words produced each chip, but more output tokens and more failed validations).
 5. The CLI (`--review`, `--pick`, `--no-required`, `--offline`), plus `python -m scheduler setup` and the first-run offer and offline notice.
 6. The FastAPI endpoints and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label).
+   - **A loading indicator while solving.** A request can take up to the 3-minute limit: a reasonable wait, but a long time for a frozen screen. Show that it's working, and show the `timed_out` note clearly when it applies.
 7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.
 
 ## Deferred / out of scope

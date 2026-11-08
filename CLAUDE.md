@@ -33,6 +33,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 - **Exactly one group per component** for each selected course. Any lab can go with any lecture (the `parent` field is stored but not enforced).
 - **Top-K never repeats.** Each solution found is ruled out before solving again. Stop at K solutions or when there are none left, and report "only N possible". Groups with identical times are merged first, so no two results look the same on the grid.
 - **`take_n_of`**: if the pool has exactly n courses, take all of them. If it has fewer than n, show an error before solving. n only counts courses in that pool; a required course in the pool uses up a pick. Hard means exactly n. Soft means n is the target, and each course over costs twice what each course short costs.
+- **Time limit: 3 minutes per request.** On timeout, keep the results found (each proven best), set `timed_out`, and never claim anything unproven. The UI shows a loading indicator meanwhile.
 - **Conflicts are minimal and name the right rules.** The conflict search keeps the full request's courses available and treats "at least one course" as a droppable rule (`nothing_to_schedule`); see plan.md Solver. Check changes against the oracle-based conflict property tests.
 - The week defaults to **Sun–Fri** (it can be changed with the catalog's `week` field).
 - **Session times are whole hours.** The loader rejects `10:30`.
