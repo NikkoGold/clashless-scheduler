@@ -362,9 +362,9 @@
 - text: "please keep fridays off, thanks"
   rules: {constraints: [{kind: day_off, day: Fri}], unparsed: []}
   tags: [filler]
-- text: "I'm not a morning person"
+- text: "I'm not a morning person"  # read literally: morning ends at noon. The chip shows 12:00, so the user can change it
   rules: {constraints: [], unparsed: [{text: "I'm not a morning person", reason: not_understood}]}
-  llm: {constraints: [{kind: no_class_before, time: "10:00", strength: soft}]}
+  llm: {constraints: [{kind: no_class_before, time: "12:00", strength: soft}]}
   tags: [vague]
 - text: "no classes before 10 with Cohen"  # partly matched: the whole clause is unparsed
   rules: {constraints: [], unparsed: [{text: "no classes before 10 with Cohen", reason: not_understood}]}
