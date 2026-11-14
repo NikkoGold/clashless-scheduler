@@ -19,6 +19,8 @@ Create `tests/helpers/fake_provider.py`:
 - Invalid twice → handled per plan (error surfaced / fallback), no third call.
 - Prompt contains the catalog's course ids, names and instructors.
 - Model-returned `unparsed` fragments reach the result.
+- Round-trip property (Hypothesis, `problems()` strategy): any valid constraints sent the way a model might (defaults left out, other parameters null, names in any case) come back unchanged, with one call. Widen it when a constraint kind or parameter is added.
+- Names: an exact match wins over a case-insensitive one (catalog ids may differ only in case).
 
 ## Router (`test_router.py`)
 Rules first, always (see plan.md Parsing → Router):

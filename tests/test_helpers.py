@@ -22,3 +22,33 @@ def test_member_helpers_reject_a_course_object_instead_of_its_id(helper, rule):
     cat, course_obj, group = sample()
     with pytest.raises(TypeError, match="course id"):
         helper(rule, course_obj, "lecture", group, cat)
+
+
+# ---- FakeProvider ----
+
+from tests.helpers.fake_provider import FakeProvider  # noqa: E402
+
+
+def test_fake_provider_returns_replies_in_order_and_raises_queued_exceptions():
+    fake = FakeProvider([{"a": 1}, "raw text", RuntimeError("503")])
+    assert fake.complete("s", "u", {}) == '{"a": 1}'
+    assert fake.complete("s", "u", {}) == "raw text"
+    with pytest.raises(RuntimeError, match="503"):
+        fake.complete("s", "u", {})
+
+
+def test_fake_provider_records_every_call():
+    fake = FakeProvider(["x", "y"])
+    fake.complete("sys1", "user1", {"type": "object"})
+    fake.complete("sys2", "user2", {})
+    assert fake.calls == [
+        {"system": "sys1", "user": "user1", "schema": {"type": "object"}},
+        {"system": "sys2", "user": "user2", "schema": {}},
+    ]
+
+
+def test_fake_provider_fails_loudly_when_called_more_times_than_replies_queued():
+    fake = FakeProvider(["x"])
+    fake.complete("s", "u", {})
+    with pytest.raises(AssertionError, match="only 1 replies were queued"):
+        fake.complete("s", "u", {})

@@ -102,3 +102,60 @@ def test_text_that_is_entirely_unparsed_still_schedules_the_required_courses(cat
     assert result.schedules
     required = {c.id for c in cat.courses if c.required}
     assert all(chosen_courses(s) == required for s in result.schedules)
+
+
+# ---- through the router (step 4): rules first, the LLM only for what they can't read ----
+
+from scheduler.config import Config  # noqa: E402
+from scheduler.parsing.router import Router  # noqa: E402
+from tests.helpers.fake_provider import FakeProvider, reply  # noqa: E402
+
+GEMINI = Config(provider="gemini", model="gemini-flash-lite-latest", api_key="k")
+
+
+def run_routed(cat, text, tmp_path, replies=(), config=GEMINI, k=5):
+    """The same as run(), with the router choosing the parser. Returns the routed parse and the fake provider."""
+    fake = FakeProvider(list(replies))
+    routed = Router(config, cache_dir=tmp_path / ".cache", provider_factory=lambda cfg: fake).parse(text, cat)
+    constraints = default_constraints(cat) + routed.result.constraints
+    result = solve(cat, constraints, k=k)
+    assert_valid_results(result, cat, constraints, k)
+    return routed, constraints, result, fake
+
+
+VAGUE = "no classes after 18, I'm not a morning person"
+
+
+def test_vague_text_is_read_by_the_llm_and_the_schedules_respect_it(cat, tmp_path):
+    llm = reply({"kind": "no_class_after", "time": "18:00"}, {"kind": "no_class_before", "time": "10:00", "strength": "soft"})
+    routed, constraints, result, fake = run_routed(cat, VAGUE, tmp_path, [llm])
+    assert routed.path == "llm" and len(fake.calls) == 1
+    assert routed.result.unparsed == []
+    assert result.schedules
+    for s in result.schedules:
+        # the LLM's soft rule is in the breakdown, met or broken: the user sees what they're accepting
+        assert [item.constraint for item in s.breakdown] == constraints
+
+
+def test_the_same_vague_text_offline_uses_what_the_rules_read_and_reports_the_rest(cat, tmp_path):
+    routed, _, result, fake = run_routed(cat, VAGUE, tmp_path, config=Config(provider="none"))
+    assert routed.path == "rules (offline)" and routed.note
+    assert [f.text for f in routed.result.unparsed] == ["I'm not a morning person"]
+    assert [c.kind for c in routed.result.constraints] == ["no_class_after"]
+    assert result.schedules and fake.calls == []
+
+
+def test_clear_text_with_an_llm_set_up_makes_no_call_and_matches_the_rules_alone(cat, tmp_path):
+    text = "ideally no classes before 10, avoid Brenner, prefer OLD tutorial 12, compact schedule"
+    routed, _, result, fake = run_routed(cat, text, tmp_path)
+    assert routed.path == "rules" and fake.calls == []
+    _, _, rules_only = run(cat, text)
+    assert result.schedules == rules_only.schedules
+
+
+def test_a_course_the_llm_invents_is_reported_and_the_rest_still_solves(cat, tmp_path):
+    llm = reply({"kind": "no_class_after", "time": "18:00"}, {"kind": "must_take", "course": "MORNING101"})
+    routed, _, result, _ = run_routed(cat, VAGUE, tmp_path, [llm])
+    assert [f.reason for f in routed.result.unparsed] == ["unknown_name"]
+    assert [c.kind for c in routed.result.constraints] == ["no_class_after"]
+    assert result.schedules
