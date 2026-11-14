@@ -1,6 +1,6 @@
 """LLMParser: the whole text to a model, back as typed constraints. Built to keep each call cheap (see plan.md, Parsing).
 
-- A flat output schema: one shape for every constraint. The provider only checks that shape; each item is then checked
+- A flat output schema: one shape for every constraint, always with its strength (a missing one would read as hard). The provider only checks that shape; each item is then checked
   by the real Pydantic models, which stay the only definition of what each kind needs.
 - Fixed instructions first (the same for every call, so providers can cache them), then the catalog's names (no
   session times or rooms), then the user's text. Defaults are left out of the reply, and there are no source spans.
@@ -22,6 +22,8 @@ KINDS = [m.model_fields["kind"].default for m in get_args(get_args(Constraint)[0
 DAYS = list(get_args(Day))
 _TEXT = {"type": "string"}
 _DAY = {"type": "string", "enum": DAYS}
+# parameters the model sees under a clearer name: "name" was read as the constraint's own name ("name": "prefer_group")
+LLM_FIELD_NAMES = {"name": "instructor"}
 CONSTRAINT_PARAMS = {
     "kind": {"type": "string", "enum": KINDS},
     "strength": {"type": "string", "enum": ["hard", "soft"]},
@@ -38,12 +40,12 @@ CONSTRAINT_PARAMS = {
     "days": {"type": "array", "items": _DAY},
     "component": _TEXT,
     "group": _TEXT,
-    "name": _TEXT,
+    "instructor": _TEXT,
 }
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "constraints": {"type": "array", "items": {"type": "object", "properties": CONSTRAINT_PARAMS, "required": ["kind"]}},
+        "constraints": {"type": "array", "items": {"type": "object", "properties": CONSTRAINT_PARAMS, "required": ["kind", "strength"]}},
         "unparsed": {"type": "array", "items": {
             "type": "object",
             "properties": {"text": _TEXT, "reason": {"type": "string", "enum": list(get_args(UnparsedReason))}},
@@ -64,12 +66,12 @@ Constraint kinds (parameters in brackets, ? = optional):
 - max_gap(minutes): longest idle time between classes on a day ("no gaps" is 0)
 - compact: keep idle time small (soft only; a hard version is max_gap 0)
 - prefer_group(course, component, group), avoid_group(course, component, group)
-- prefer_instructor(name), avoid_instructor(name)
+- prefer_instructor(instructor), avoid_instructor(instructor)
 - min_credits(n), max_credits(n)
 
-Strength: "hard" for must, can't, never, need, no; "soft" for prefer, ideally, if possible, avoid, rather. \
-No strength word means hard; then leave strength out. Leave weight out (default 5) unless the user says how much \
-something matters (1-10).
+Give each constraint only the parameters its kind takes, plus its strength: "hard" for must, can't, never, need, \
+no; "soft" for prefer, ideally, if possible, avoid, rather. No strength word means hard. Leave weight out (default 5) \
+unless the user says how much something matters (1-10).
 
 Conventions:
 - Days are Sun Mon Tue Wed Thu Fri Sat. "Every day" and "weekdays" use the week given below; the weekend is Fri and \
@@ -77,13 +79,15 @@ Sat whatever the week, and weekdays are the week's other days.
 - A bare hour 1-7 means pm ("after 4" is 16:00); 8-12 is taken as given. Noon is 12:00. Midnight is not a time.
 - Unless times are given, lunch is 12:00-13:00.
 - On a course, "prefer" is a soft must_take and "avoid" a soft exclude_course.
+- "Take <course> <group>" is a must_take plus a hard prefer_group: take the course, and only in that group.
 - Use only the course ids, components, groups and instructors listed below, spelled as listed.
 
 Put anything you can't turn into a constraint in "unparsed": the user's exact words, and a reason (not_understood, \
 unknown_name for a course or person that isn't listed, ambiguous_name, invalid_time, conflicting_strength). Don't guess.
 
 Example: "ideally nothing before 10, Fridays off, my bus is slow"
-{"constraints": [{"kind": "no_class_before", "time": "10:00", "strength": "soft"}, {"kind": "day_off", "day": "Fri"}], \
+{"constraints": [{"kind": "no_class_before", "time": "10:00", "strength": "soft"}, {"kind": "day_off", "day": "Fri", \
+"strength": "hard"}], \
 "unparsed": [{"text": "my bus is slow", "reason": "not_understood"}]}"""
 
 RETRY = "\n\nYour previous reply was invalid: {error}\nReply again with corrected JSON."
@@ -167,8 +171,14 @@ def _read_reply(raw: str) -> tuple[list[Constraint], list[UnparsedFragment]]:
         if not isinstance(item, dict):
             problems.append(f"constraint {i} isn't an object")
             continue
+        item = {k: v for k, v in item.items() if v is not None}
+        if "strength" not in item:  # left out, it would silently read as hard
+            problems.append(f"constraint {i} ({item.get('kind')}): strength is required")
+            continue
+        if item.get("kind") in ("prefer_instructor", "avoid_instructor") and "instructor" in item:
+            item["name"] = item.pop("instructor")
         try:
-            constraints.append(parse_constraint({k: v for k, v in item.items() if v is not None}))
+            constraints.append(parse_constraint(item))
         except ValidationError as e:
             problems.append(f"constraint {i} ({item.get('kind')}): {_errors(e)}")
     for i, frag in enumerate(frags, 1):

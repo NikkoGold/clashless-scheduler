@@ -6,7 +6,7 @@ import pytest
 
 from scheduler.models import Compact, Constraint, DayOff, MustTake, NoClassBefore, PreferGroup, PreferInstructor
 from scheduler.parsing.base import ParseResult, PreferenceParser
-from scheduler.parsing.llm import OUTPUT_SCHEMA, SYSTEM_PROMPT, LLMFailed, LLMParser, user_message
+from scheduler.parsing.llm import LLM_FIELD_NAMES, OUTPUT_SCHEMA, SYSTEM_PROMPT, LLMFailed, LLMParser, user_message
 from tests.helpers.catalog_builder import catalog, course, grp
 from tests.helpers.fake_provider import FakeProvider, reply
 
@@ -77,6 +77,7 @@ def test_the_message_states_the_catalogs_week(cat):
     "weekend is fri and sat",
     "bare hour 1-7 means pm",
     "no strength word means hard",
+    "is a must_take plus a hard prefer_group",  # "take CS101 lab 11"
 ])
 def test_the_instructions_state_the_rule_parsers_conventions(convention):
     assert convention in " ".join(SYSTEM_PROMPT.lower().split())  # ignoring case and line breaks
@@ -109,9 +110,39 @@ def test_the_schema_lists_exactly_the_constraint_kinds():
 
 
 def test_the_schema_has_every_parameter_of_every_constraint_kind():
-    params = {f for m in CONSTRAINT_MODELS for f in m.model_fields}
+    params = {LLM_FIELD_NAMES.get(f, f) for m in CONSTRAINT_MODELS for f in m.model_fields}
     assert set(_item_schema()["properties"]) == params
-    assert _item_schema()["required"] == ["kind"]
+    assert _item_schema()["required"] == ["kind", "strength"]
+
+
+def test_the_instructor_parameter_has_an_unambiguous_name_for_the_model():
+    # the live eval: a field called "name" was filled with the constraint's own name ("name": "prefer_group")
+    assert "name" not in _item_schema()["properties"] and "instructor" in _item_schema()["properties"]
+    assert "prefer_instructor(instructor)" in SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("kind", ["prefer_instructor", "avoid_instructor"])
+def test_the_instructor_parameter_maps_back_to_name(cat, kind):
+    result, _ = parse(cat, reply({"kind": kind, "instructor": "Cohen", "strength": "soft"}))
+    assert [(c.kind, c.name, c.strength) for c in result.constraints] == [(kind, "Cohen", "soft")]
+
+
+@pytest.mark.parametrize("item, mentions", [
+    ({"kind": "prefer_group", "course": "CS101", "component": "lab", "group": "11", "strength": "soft",
+      "name": "prefer_group"}, "name"),
+    ({"kind": "day_off", "day": "Fri", "strength": "hard", "instructor": "Cohen"}, "instructor"),
+], ids=["name-on-a-group-rule", "instructor-on-another-kind"])
+def test_a_stray_name_or_instructor_is_invalid_and_retried(cat, item, mentions):
+    result, fake = parse(cat, {"constraints": [item], "unparsed": []}, reply({"kind": "day_off", "day": "Fri"}))
+    assert len(fake.calls) == 2 and mentions in fake.calls[1]["user"][len(fake.calls[0]["user"]):]
+
+
+def test_a_missing_strength_is_invalid_and_retried(cat):
+    # the live eval: "prefer Cohen" came back without strength, which would silently have made it hard
+    result, fake = parse(cat, {"constraints": [{"kind": "prefer_instructor", "instructor": "Cohen"}], "unparsed": []},
+                         reply({"kind": "prefer_instructor", "instructor": "Cohen", "strength": "soft"}))
+    assert result.constraints == [PreferInstructor(name="Cohen", strength="soft")]
+    assert len(fake.calls) == 2 and "strength" in fake.calls[1]["user"][len(fake.calls[0]["user"]):]
 
 
 def test_the_schema_stays_small():
@@ -125,7 +156,7 @@ def test_a_valid_reply_gives_validated_constraints_with_defaults_filled_in(cat):
                                     {"kind": "no_class_before", "time": "10:00", "strength": "soft", "weight": 8}))
     assert isinstance(result, ParseResult)
     assert result.constraints == [DayOff(day="Fri"), Compact(), NoClassBefore(time="10:00", strength="soft", weight=8)]
-    assert result.constraints[0].strength == "hard" and result.constraints[0].weight == 5
+    assert result.constraints[0].weight == 5  # weight is the one default the model leaves out
     assert result.constraints[1].strength == "soft"
     assert len(fake.calls) == 1
 
@@ -185,7 +216,7 @@ def test_invalid_replies_are_not_a_provider_error(cat):
 @pytest.mark.parametrize("bad, name", [
     ({"kind": "must_take", "course": "CS102"}, "CS102"),
     ({"kind": "take_n_of", "courses": ["CS101", "BIO9"], "n": 1}, "BIO9"),
-    ({"kind": "avoid_instructor", "name": "Smith"}, "Smith"),
+    ({"kind": "avoid_instructor", "instructor": "Smith"}, "Smith"),
     ({"kind": "prefer_group", "course": "CS101", "component": "tutorial", "group": "1"}, "tutorial"),
     ({"kind": "prefer_group", "course": "CS101", "component": "lab", "group": "13"}, "13"),
 ], ids=["course", "course-in-pool", "instructor", "component", "group"])
@@ -199,7 +230,7 @@ def test_an_unknown_name_is_moved_to_unparsed_and_the_rest_is_kept(cat, bad, nam
 
 @pytest.mark.parametrize("bad, suggestion", [
     ({"kind": "must_take", "course": "CS102"}, "CS101"),
-    ({"kind": "avoid_instructor", "name": "Cohenn"}, "Cohen"),
+    ({"kind": "avoid_instructor", "instructor": "Cohenn"}, "Cohen"),
     ({"kind": "prefer_group", "course": "CS101", "component": "lab", "group": "13"}, "11"),
 ])
 def test_an_unknown_name_suggests_what_the_catalog_has(cat, bad, suggestion):
@@ -209,7 +240,7 @@ def test_an_unknown_name_suggests_what_the_catalog_has(cat, bad, suggestion):
 
 @pytest.mark.parametrize("given, fixed", [
     ({"kind": "must_take", "course": "cs101"}, MustTake(course="CS101")),
-    ({"kind": "prefer_instructor", "name": "cohen"}, PreferInstructor(name="Cohen")),
+    ({"kind": "prefer_instructor", "instructor": "cohen"}, PreferInstructor(name="Cohen")),
     ({"kind": "prefer_group", "course": "cs101", "component": "Lab", "group": "11"},
      PreferGroup(course="CS101", component="lab", group="11")),
 ])
@@ -263,14 +294,16 @@ from hypothesis import strategies as st  # noqa: E402
 from scheduler.parsing.llm import CONSTRAINT_PARAMS  # noqa: E402
 from tests.helpers.strategies import problems  # noqa: E402
 
-NAME_FIELDS = ("course", "component", "name")
+NAME_FIELDS = ("course", "component", "instructor")
 
 
 def _as_sent(c, pad_nulls: bool, recase) -> dict:
     """A constraint the way a model might send it: defaults left out, maybe every other parameter as null,
     and names in whatever case."""
     item = c.model_dump(mode="json", exclude_defaults=True)
-    item["kind"] = c.kind
+    item["kind"], item["strength"] = c.kind, c.strength  # strength is always stated
+    if "name" in item:
+        item["instructor"] = item.pop("name")
     for f in NAME_FIELDS:
         if f in item:
             item[f] = recase(item[f])

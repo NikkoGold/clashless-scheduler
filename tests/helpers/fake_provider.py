@@ -27,5 +27,9 @@ class FakeProvider:
 
 
 def reply(*constraints, unparsed=()) -> dict:
-    """A well-formed model reply: `reply({"kind": "day_off", "day": "Fri"}, unparsed=[("I hate Mondays", "not_understood")])`."""
-    return {"constraints": list(constraints), "unparsed": [{"text": t, "reason": r} for t, r in unparsed]}
+    """A well-formed model reply: `reply({"kind": "day_off", "day": "Fri"}, unparsed=[("I hate Mondays", "not_understood")])`.
+
+    Every constraint states its strength (hard unless given; compact is soft), as the schema requires.
+    """
+    items = [{"strength": "soft" if c.get("kind") == "compact" else "hard", **c} for c in constraints]
+    return {"constraints": items, "unparsed": [{"text": t, "reason": r} for t, r in unparsed]}
