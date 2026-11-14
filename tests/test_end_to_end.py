@@ -159,3 +159,13 @@ def test_a_course_the_llm_invents_is_reported_and_the_rest_still_solves(cat, tmp
     assert [f.reason for f in routed.result.unparsed] == ["unknown_name"]
     assert [c.kind for c in routed.result.constraints] == ["no_class_after"]
     assert result.schedules
+
+
+def test_an_llm_pool_smaller_than_n_is_kept_and_reported_as_an_error_before_solving(cat, tmp_path):
+    # same rule as the picker: "take 3 of 2 courses" can never be met, so the user is told and rephrases
+    pool = [c.id for c in cat.courses if not c.required][:2]
+    fake = FakeProvider([reply({"kind": "take_n_of", "courses": pool, "n": 3})])
+    routed = Router(GEMINI, cache_dir=tmp_path / ".cache", provider_factory=lambda cfg: fake).parse(VAGUE, cat)
+    assert [c.kind for c in routed.result.constraints] == ["take_n_of"]  # not silently dropped
+    with pytest.raises(ValueError, match=r"can't take 3 from a pool of 2"):
+        solve(cat, default_constraints(cat) + routed.result.constraints, k=5)
