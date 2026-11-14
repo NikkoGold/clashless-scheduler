@@ -37,7 +37,7 @@ Helpers are created once and reused. Never redefine a builder or checker inside 
 - `pytest -q` must pass offline: no network, no API keys, no `.env` needed. Use `monkeypatch.setenv`/`delenv` for config.
 - Markers (registered in `pyproject.toml` under `[tool.pytest.ini_options]`):
   - `slow` — longer solver runs; still run by default.
-  - `live` — real LLM calls; skipped unless `RUN_LIVE_LLM=1`. Capped by `LIVE_LLM_MAX_CALLS` (default 40), separate from the app's `LLM_MAX_CALLS_PER_DAY`.
+  - `live` — real LLM calls; skipped unless `RUN_LIVE_LLM=1`. Capped by `LIVE_LLM_MAX_CALLS` (default 20), separate from the app's `LLM_MAX_CALLS_PER_DAY`.
 - Test names describe behaviour: `test_back_to_back_classes_do_not_clash`, not `test_overlap_2`.
 - One behaviour per test. Parametrize variants instead of looping inside a test.
 - Use `tmp_path` for any files written (exports, catalogs).

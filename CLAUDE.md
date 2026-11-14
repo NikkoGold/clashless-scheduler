@@ -19,8 +19,8 @@ courses.json ──► catalog (Pydantic) ────────────�
 - `scheduler/catalog.py`: loads and checks the JSON, time helpers, merges groups that meet at identical times.
 - `scheduler/constraints.py`: the constraint kinds, and how each one is added to the CP-SAT model.
 - `scheduler/solver.py`: builds the model, top-K enumeration, explains unsolvable cases, score breakdown.
-- `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (whole-text cache → rules first → whole text to the LLM only if something is unparsed and an LLM is set up; budget; fallback with the reason shown; records the path used). A phrase-level cache was considered and dropped; see plan.md Parsing → Router.
-- `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) and writes it from first-run setup. No `.env` means offline.
+- `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (whole-text cache → rules first → whole text to the LLM only if something is unparsed and an LLM is set up; budget; fallback with the reason shown; returns a `RoutedParse` recording the path used). The LLM gets a flat output schema, the catalog names and the rule parser's conventions, returns no spans, and retries once only on an invalid reply. A phrase-level cache was considered and dropped; see plan.md Parsing → Router.
+- `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) from the working directory and writes it from first-run setup. No `.env` or `LLM_PROVIDER=none` means offline. The parse cache and daily call count live in `.cache/` (git-ignored).
 - `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--no-required] [--offline] [--top 5] [--export out.xlsx]`, and `python -m scheduler setup`.
 - `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
 
@@ -74,7 +74,7 @@ Key rules:
 - Reuse the shared helpers in `tests/helpers/` (catalog builder, `assert_valid_schedule`/`assert_valid_results` invariant checker, brute-force oracle). Don't redefine them inside test files.
 - Every solver test runs its results through the invariant checker.
 - Rule parser cases go in `tests/data/phrases.yaml` (phrase → expected constraints and unparsed text). Optional `llm:` expectations feed the live eval.
-- Markers: `slow` (runs by default) and `live` (real LLM calls, skipped unless `RUN_LIVE_LLM=1`, capped by `LIVE_LLM_MAX_CALLS`, default 40). The live eval is the only test that may use the network. Run it with `RUN_LIVE_LLM=1 pytest -m live` after any prompt, schema or model change.
+- Markers: `slow` (runs by default) and `live` (real LLM calls, skipped unless `RUN_LIVE_LLM=1`, capped by `LIVE_LLM_MAX_CALLS`, default 20). The live eval is the only test that may use the network. Run it with `RUN_LIVE_LLM=1 pytest -m live` after any prompt, schema or model change.
 - Name tests after behaviour (`test_back_to_back_classes_do_not_clash`), one behaviour per test, and parametrize variants. Use `tmp_path` for written files.
 - Solver behaviours that must have tests (from plan.md):
   - back-to-back 10–12 / 12–14 is allowed

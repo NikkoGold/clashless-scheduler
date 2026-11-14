@@ -30,7 +30,7 @@ scheduler/
   pyproject.toml            # fastapi, uvicorn, pydantic, ortools, python-dotenv, httpx, openpyxl; extras: gemini, anthropic, openai
                             # dev extras: pytest; pyyaml (loads tests/data/phrases.yaml, the shared parser phrase cases);
                             #   hypothesis (random small-catalog property tests checked against the brute-force oracle, added after build step 2)
-  .env.example              # LLM_PROVIDER, LLM_MODEL, API keys, LLM_ENABLED, LLM_MAX_CALLS_PER_DAY
+  .env.example              # LLM_PROVIDER, LLM_MODEL, API keys, LLM_MAX_CALLS_PER_DAY
   data/sample_courses.json
   scheduler/
     models.py               # Catalog + Constraint schemas (Pydantic)
@@ -121,7 +121,14 @@ A constraint naming a course, component, group or instructor that isn't in the c
 | `min_credits`, `max_credits` | credits short or over |
 
 ## Parsing
-- **LLMParser**: the system prompt includes the constraint JSON schema plus the catalog's course IDs, names and instructors, so the model can resolve phrases like "the algorithms course" or "Prof. Levi". The parser asks for JSON output that follows the schema (the native structured-output mode of Gemini, OpenAI or Anthropic tool use, or Ollama's `format`). Output is validated with Pydantic; if validation fails, the parser retries once and includes the error. Anything the model couldn't map goes in `unparsed` and is shown to the user.
+- **LLMParser**: the prompt includes the catalog's course IDs, names and instructors (each instructor once; no session times or rooms), so the model can resolve phrases like "the algorithms course" or "Prof. Levi". The parser asks for JSON output that follows a schema (the native structured-output mode of Gemini, OpenAI or Anthropic tool use, or Ollama's `format`). Anything the model couldn't map goes in `unparsed` and is shown to the user. Built to keep each call cheap (decided before step 4):
+  - **A flat output schema.** One object shape for every constraint, `{kind, ...every parameter, all optional}`, plus `unparsed: [{text, reason}]`. It is a fraction of the size of the full per-kind schema Pydantic generates (~10.5k characters) and works the same on every provider. The provider only checks the shape; each item is then checked against the real Pydantic models, which stay the only definition of what each kind needs.
+  - **Defaults left out**: no `strength` means hard and no `weight` means 5, as in the rule parser.
+  - **No source spans.** LLM results have empty `spans`; the chips show without word highlighting. Only `unparsed` repeats the user's words.
+  - **The rule parser's conventions are in the prompt** (a bare 1–7 means pm, lunch is 12–13, the weekend is Fri–Sat, "every day" means the catalog's week, no keyword means hard), so both parsers read the same text the same way.
+  - Temperature 0, a cap on output tokens, no thinking (Gemini thinking budget 0), at most a few very short examples. The fixed instructions come first, then the catalog, then the user's text, so the providers' automatic prompt caching can reuse the start.
+  - **Retry once** when the reply isn't valid JSON or fails the Pydantic check, with the error included. A second invalid reply fails the LLM path (the router falls back to the rules result). API and network errors are not retried.
+  - **Names are checked against the catalog.** An item naming a course, component, group or instructor the catalog doesn't have is moved to `unparsed` as `unknown_name` and the rest is kept. A name that differs only in case is corrected to the catalog's spelling.
 - **RuleParser** (deliberately simple): splits the text into clauses on `.`, `,`, `;` and "and", then matches each clause against a small set of patterns for times ("before 10", "after 4pm"), days ("fridays", "sun"), keywords ("off", "lunch", "gap", "compact", "avoid", "prefer") and fuzzy matches against course and instructor names (`difflib`). It also uses the hard/soft keyword rules. It doesn't guess: any clause it can't fully match is returned as-is in `unparsed`. Details:
   - **Splitting**: time ranges ("12-13", "12 to 1", "between 12 and 1") and lists of days or names ("Mon, Wed and Fri off", "prefer Cohen and Adler") are recognised before splitting, so they stay in one clause and the rule applies to each item. A `.` between digits ("4.30pm") or after a title ("Prof.", "Dr.") doesn't split. Clauses made only of filler ("please", "thanks") are dropped silently.
   - **Times**: am/pm and 24-hour times are taken as written, and "noon" is 12:00. A bare hour 1–7 means pm and 8–12 is taken as given. In a range, a bare start takes the end's am/pm when that keeps it before the end ("8-10pm" → 20–22, "11-1pm" → 11–13), and a bare start isn't moved to pm if that would put it after the end ("7-9" → 07–09). The chips and breakdown always show the time used. Impossible times or ranges ("before 25", "13-12", "10:75", "13pm") are unparsed. "Midnight" isn't read as a time: as 00:00, "no classes after midnight" would ban every class.
@@ -135,11 +142,12 @@ A constraint naming a course, component, group or instructor that isn't in the c
 - **`ParseResult`**: `constraints`; `unparsed: [{text, reason, candidates}]`, where `text` is the original fragment, `reason` is one of `not_understood`, `unknown_name`, `ambiguous_name`, `invalid_time` or `conflicting_strength`, and `candidates` lists suggested names (may be empty); and `spans: [{text, constraints}]`, one per fully parsed clause in text order, so the UI can show which words produced each constraint. Spans are not part of the `Constraint` models.
 - **Unparsed feedback (both parsers)**: each `ParseResult.unparsed` entry keeps the original text fragment and says why it wasn't used, so the user knows whether to rephrase, fix a name ("did you mean Levi?") or pick between candidates. The UI highlights them under the text box ("Couldn't understand: *'I'm not a morning person'*. Try rephrasing, e.g. 'no classes before 10'") so you can edit the request and parse again. The CLI prints them as warnings; with `--review` it lets you edit the text and parse again.
 - **Router** (rules first, always):
-  1. **Whole-text cache**, keyed by a hash of the text and catalog, so re-solving, changing K, toggling courses or going back to earlier text costs nothing.
+  1. **Whole-text cache**, keyed by a hash of the text, the catalog and the provider and model, so re-solving, changing K, toggling courses or going back to earlier text costs nothing. Only LLM results are cached (the rules are free to rerun). It is a file, `.cache/parse_cache.json`, so it also works across CLI runs; it keeps the 200 most recent entries, and a corrupt file is ignored.
   2. **RuleParser on the whole text.** If nothing is left unparsed, that is the result and no LLM call is made.
   3. Otherwise, **if an LLM is set up** and the daily limit isn't reached, the **whole** text goes to the LLM (never just the leftover clauses, because the meaning can depend on the rest of the text, and a partial call would cost nearly as much because the fixed prompt dominates).
   4. If no LLM is set up (offline), the limit is reached, or the call fails, the rules result is used, its unparsed fragments are shown, and the user is told why the LLM wasn't used.
-  - The result records which path was used (`cache`, `rules`, `llm`, or `rules (offline)` / `rules (LLM unavailable: <reason>)`) and the UI and CLI show it.
+  - **Daily limit**: every real API call counts, retries included, and a retry only happens if the limit has room. The count is kept in `.cache/llm_usage.json` (local date and count) so it holds across CLI runs, and starts again each local day; a corrupt file counts as zero. Ollama runs locally and isn't counted.
+  - The router returns a `RoutedParse`: the `ParseResult`, plus which path was used (`cache`, `rules`, `llm`, or `rules (offline)` / `rules (LLM unavailable: <reason>)`), which the UI and CLI show. Both parsers keep returning a plain `ParseResult`.
   - Editing constraints through the review chips never re-parses, so deleting or reweighting a constraint costs nothing.
   - **Considered and dropped:** a phrase-level cache that reused cached parts of earlier LLM answers. It only saved a call when an edit was entirely known clauses, mostly deletions, which the chips already handle for free. It needed verbatim source spans from the LLM (more tokens, more failed validations, each one costing a retry call) and could silently misread meaning that spans clauses. If call budgets turn out to be tight in real use, count parses by path locally and revisit with real numbers.
 
@@ -153,7 +161,10 @@ OPENAI_API_KEY=...
 OLLAMA_URL=http://localhost:11434
 LLM_MAX_CALLS_PER_DAY=50
 ```
-Provider SDKs are optional extras and are imported only when that provider is selected. With no `.env`, or `LLM_PROVIDER=none`, the app runs offline with the rule parser alone; first-run setup writes this file.
+Provider SDKs are optional extras and are imported only when that provider is selected. With no `.env`, or `LLM_PROVIDER=none`, the app runs offline with the rule parser alone; first-run setup writes this file. An unknown `LLM_PROVIDER` gives a clear message and runs offline.
+- `.env` is read from the working directory. Setup prints the full path it wrote to, keeps unrelated lines already in the file, and warns if the file isn't git-ignored (the key is stored in plain text).
+- Default models: `gemini-flash-lite-latest` for Gemini and `claude-haiku-5-5` for Anthropic. For OpenAI and Ollama, setup asks for the model name (the cheapest OpenAI model changes, and Ollama depends on what's installed).
+- There is no `LLM_ENABLED` switch; `LLM_PROVIDER=none` is the way to stay offline.
 
 ## Solver (OR-Tools CP-SAT)
 - One boolean per (course, component, group), plus one boolean per course meaning "taking this course". Selected courses must pick exactly one group per component.
@@ -189,7 +200,8 @@ A single page:
 2. All other constraint kinds in the solver (hard and soft), scoring and ranking, and conflict explanation.
 3. The rule parser and its tests (a set of test phrases with expected constraints).
 4. Provider adapters, the LLM parser, the router (whole-text cache → rules first → LLM only if needed; budget; fallback with the reason shown), and config reading/writing `.env` for setup.
-   - **Before starting, discuss how to keep each call as cheap as possible.** The app should work for as many people as possible, including those on free tiers or with tight limits. Also decide whether the LLM should return source spans (useful for showing which words produced each chip, but more output tokens and more failed validations).
+   - Discussed before starting: how to keep each call as cheap as possible, so the app works on free tiers and tight limits, and whether the LLM returns source spans (it doesn't). The decisions are under Parsing → LLMParser and Router.
+   - The live eval (`tests/test_llm_live.py`, opt-in) runs about 15 phrases against Gemini, capped at 20 calls. It's the only check of the prompt itself with a real model.
 5. The CLI (`--review`, `--pick`, `--no-required`, `--offline`), plus `python -m scheduler setup` and the first-run offer and offline notice.
 6. The FastAPI endpoints and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label).
    - **A loading indicator while solving.** A request can take up to the 3-minute limit: a reasonable wait, but a long time for a frozen screen. Show that it's working, and show the `timed_out` note clearly when it applies.
