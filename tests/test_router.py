@@ -31,7 +31,7 @@ def cat():
 
 
 def gemini(**kw) -> Config:
-    return Config(provider="gemini", model="gemini-flash-lite-latest", api_key="k", **kw)
+    return Config(provider="gemini", model="gemini-3.5-flash-lite", api_key="k", **kw)
 
 
 class Factory:
@@ -231,7 +231,7 @@ def test_a_changed_text_catalog_or_model_is_a_cache_miss(tmp_path, cat, change):
     elif change == "model":
         config = Config(provider="gemini", model="gemini-pro-latest", api_key="k")
     else:
-        config = Config(provider="anthropic", model="gemini-flash-lite-latest", api_key="k")
+        config = Config(provider="anthropic", model="gemini-3.5-flash-lite", api_key="k")
     r, fake, _ = router(tmp_path, LLM_REPLY, config=config)
     assert r.parse(text, catalog_).path == "llm" and len(fake.calls) == 1
 

@@ -13,7 +13,8 @@ from dotenv import dotenv_values
 PROVIDERS = ("gemini", "anthropic", "openai", "ollama")
 KEY_VARS = {"gemini": "GEMINI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 # OpenAI and Ollama have none: the cheapest OpenAI model changes, and Ollama depends on what's installed
-DEFAULT_MODELS = {"gemini": "gemini-flash-lite-latest", "anthropic": "claude-haiku-5-5"}
+# pinned: the SDK uses the v1 API, which has no "-latest" aliases
+DEFAULT_MODELS = {"gemini": "gemini-3.5-flash-lite", "anthropic": "claude-haiku-5-5"}
 DEFAULT_MAX_CALLS = 50
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 ENV_PATH = Path(".env")

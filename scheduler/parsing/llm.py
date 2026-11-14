@@ -97,6 +97,10 @@ class Budget(Protocol):
 class LLMFailed(Exception):
     """The LLM couldn't give a usable parse. The message says why, for the user."""
 
+    def __init__(self, message: str, provider_error: bool = False):
+        super().__init__(message)
+        self.provider_error = provider_error  # the provider failed (network, API, model name), not the model's reply
+
 
 def user_message(text: str, catalog: Catalog) -> str:
     lines = [f"Week: {', '.join(catalog.week)}", "Courses (id: name; components and groups):"]
@@ -126,7 +130,7 @@ class LLMParser:
             try:
                 raw = self.provider.complete(SYSTEM_PROMPT, message, OUTPUT_SCHEMA)
             except Exception as e:  # network, API or SDK error: not worth a retry
-                raise LLMFailed(f"{self.provider.name} error: {str(e)[:MAX_ERROR]}") from e
+                raise LLMFailed(f"{self.provider.name} error: {str(e)[:MAX_ERROR]}", provider_error=True) from e
             try:
                 constraints, unparsed = _read_reply(raw)
             except _Invalid as e:

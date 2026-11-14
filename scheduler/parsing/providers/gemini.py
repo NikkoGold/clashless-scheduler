@@ -2,6 +2,13 @@
 from scheduler.parsing.providers import MAX_OUTPUT_TOKENS, import_sdk
 
 
+def _least_thinking(model: str) -> dict:
+    """Gemini 2.x turns thinking off with a zero budget; Gemini 3+ rejects that and takes a level instead."""
+    if model.removeprefix("models/").startswith("gemini-2"):
+        return {"thinking_budget": 0}
+    return {"thinking_level": "minimal"}
+
+
 class GeminiProvider:
     name = "gemini"
     counts_toward_budget = True
@@ -23,7 +30,7 @@ class GeminiProvider:
                 "response_json_schema": schema,
                 "temperature": 0,
                 "max_output_tokens": MAX_OUTPUT_TOKENS,
-                "thinking_config": {"thinking_budget": 0},  # no thinking: it costs output tokens and isn't needed
+                "thinking_config": _least_thinking(self.model),  # thinking costs output tokens and isn't needed
             },
         )
         self.model_version = getattr(response, "model_version", None)

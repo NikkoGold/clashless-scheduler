@@ -154,7 +154,7 @@ A constraint naming a course, component, group or instructor that isn't in the c
 ## Config (.env)
 ```
 LLM_PROVIDER=gemini        # gemini | anthropic | openai | ollama | none
-LLM_MODEL=gemini-flash-lite-latest
+LLM_MODEL=gemini-3.5-flash-lite
 GEMINI_API_KEY=...
 ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
@@ -163,7 +163,7 @@ LLM_MAX_CALLS_PER_DAY=50
 ```
 Provider SDKs are optional extras and are imported only when that provider is selected. With no `.env`, or `LLM_PROVIDER=none`, the app runs offline with the rule parser alone; first-run setup writes this file. An unknown `LLM_PROVIDER` gives a clear message and runs offline.
 - `.env` is read from the working directory. Setup prints the full path it wrote to, keeps unrelated lines already in the file, and warns if the file isn't git-ignored (the key is stored in plain text).
-- Default models: `gemini-flash-lite-latest` for Gemini and `claude-haiku-5-5` for Anthropic. For OpenAI and Ollama, setup asks for the model name (the cheapest OpenAI model changes, and Ollama depends on what's installed).
+- Default models: `gemini-3.5-flash-lite` for Gemini (pinned: the Gemini SDK uses the v1 API, which has no `-latest` aliases; the adapter asks Gemini 3+ for `thinking_level: minimal` and 2.x for `thinking_budget: 0`) and `claude-haiku-5-5` for Anthropic. For OpenAI and Ollama, setup asks for the model name (the cheapest OpenAI model changes, and Ollama depends on what's installed).
 - There is no `LLM_ENABLED` switch; `LLM_PROVIDER=none` is the way to stay offline.
 
 ## Solver (OR-Tools CP-SAT)

@@ -55,14 +55,21 @@ def openai_client(text):
 
 def test_gemini_returns_the_json_text_and_sends_the_cheap_settings():
     client, call = gemini_client(json.dumps(PAYLOAD))
-    p = GeminiProvider(api_key="k", model="gemini-flash-lite-latest", client=client)
+    p = GeminiProvider(api_key="k", model="gemini-3.5-flash-lite", client=client)
     assert json.loads(p.complete("SYS", "USER", SCHEMA)) == PAYLOAD
     cfg = call.kwargs["config"]
-    assert call.kwargs["model"] == "gemini-flash-lite-latest" and call.kwargs["contents"] == "USER"
+    assert call.kwargs["model"] == "gemini-3.5-flash-lite" and call.kwargs["contents"] == "USER"
     assert cfg["system_instruction"] == "SYS"
     assert cfg["response_mime_type"] == "application/json" and cfg["response_json_schema"] == SCHEMA
     assert cfg["temperature"] == 0 and cfg["max_output_tokens"] == MAX_OUTPUT_TOKENS
-    assert cfg["thinking_config"] == {"thinking_budget": 0}
+    assert cfg["thinking_config"] == {"thinking_level": "minimal"}  # Gemini 3+: the lowest level; it rejects a budget of 0
+
+
+@pytest.mark.parametrize("model", ["gemini-2.5-flash-lite", "models/gemini-2.0-flash"])
+def test_gemini_2_models_turn_thinking_off_with_a_zero_budget(model):
+    client, call = gemini_client("{}")
+    GeminiProvider(api_key="k", model=model, client=client).complete("S", "U", SCHEMA)
+    assert call.kwargs["config"]["thinking_config"] == {"thinking_budget": 0}
 
 
 def test_anthropic_returns_the_forced_tool_call_input_and_sends_the_cheap_settings():

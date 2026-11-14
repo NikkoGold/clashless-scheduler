@@ -54,7 +54,7 @@ def test_the_llm_reads_the_phrase_table_accurately():
     min_accuracy = float(os.environ.get("LIVE_LLM_MIN_ACCURACY", "0.8"))
     parser = LLMParser(provider, budget=cap)
 
-    rows, passed, attempted = [], 0, 0
+    rows, passed, attempted, stopped = [], 0, 0, None
     for case in LIVE_CASES:
         if cap.left <= 0:
             rows.append(("skip", case["text"], "", "call limit reached"))
@@ -67,6 +67,10 @@ def test_the_llm_reads_the_phrase_table_accurately():
             shown = _short(got)
         except LLMFailed as e:  # a provider error or invalid reply counts as a fail for this phrase
             ok, shown = False, f"failed: {e}"
+            if e.provider_error:  # an outage or a wrong model name would fail every phrase: don't spend more calls
+                rows.append(("FAIL", case["text"], _short(expected), shown))
+                stopped = str(e)
+                break
         passed += ok
         rows.append(("pass" if ok else "FAIL", case["text"], _short(expected), shown))
 
@@ -76,4 +80,5 @@ def test_the_llm_reads_the_phrase_table_accurately():
     accuracy = passed / attempted if attempted else 0.0
     print(f"  {passed}/{attempted} = {accuracy:.0%} (threshold {min_accuracy:.0%})")
     assert attempted, "no phrases were run"
+    assert stopped is None, f"stopped at a provider error: {stopped}"
     assert accuracy >= min_accuracy

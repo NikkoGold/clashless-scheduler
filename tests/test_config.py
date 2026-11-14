@@ -37,7 +37,7 @@ def test_values_are_read_from_the_env_file(tmp_path):
     assert not cfg.needs_setup and cfg.problem is None
 
 
-@pytest.mark.parametrize("provider, model", [("gemini", "gemini-flash-lite-latest"), ("anthropic", "claude-haiku-5-5")])
+@pytest.mark.parametrize("provider, model", [("gemini", "gemini-3.5-flash-lite"), ("anthropic", "claude-haiku-5-5")])
 def test_a_provider_without_a_model_gets_its_default_model(tmp_path, provider, model):
     cfg = load_config(env_file(tmp_path, f"LLM_PROVIDER={provider}\n"), environ={})
     assert cfg.model == model
@@ -64,7 +64,7 @@ def test_reads_the_process_environment_by_default(tmp_path, monkeypatch):
     assert not load_config(tmp_path / ".env").needs_setup
 
 
-@pytest.mark.parametrize("value", ["gemeni", "chatgpt", "gemini-flash-lite-latest"])  # a typo, a product, a model
+@pytest.mark.parametrize("value", ["gemeni", "chatgpt", "gemini-3.5-flash-lite"])  # a typo, a product, a model
 def test_an_unknown_provider_runs_offline_with_a_clear_message(tmp_path, value):
     cfg = load_config(env_file(tmp_path, f"LLM_PROVIDER={value}\n"), environ={})
     assert cfg.provider == "none"
@@ -95,7 +95,7 @@ def test_setup_writes_provider_model_and_key(tmp_path):
     path = tmp_path / ".env"
     write_setup(path, "gemini", api_key="k1", is_ignored=lambda p: True)
     cfg = load_config(path, environ={})
-    assert (cfg.provider, cfg.model, cfg.api_key) == ("gemini", "gemini-flash-lite-latest", "k1")
+    assert (cfg.provider, cfg.model, cfg.api_key) == ("gemini", "gemini-3.5-flash-lite", "k1")
 
 
 def test_continue_offline_writes_provider_none(tmp_path):

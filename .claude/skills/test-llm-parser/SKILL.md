@@ -49,4 +49,4 @@ The only test that calls a real API. `tests/test_llm_live.py`, marked `live`, sk
 - Calls the real **LLMParser directly** (not the router: rules-first would answer the simple phrases without the LLM), with no cache; stops after `LIVE_LLM_MAX_CALLS` calls (default 20, separate from the app's daily limit).
 - Score = share of phrases whose constraints match the `llm:` expectation exactly (unordered; `unparsed` ignored). Fail if below `LIVE_LLM_MIN_ACCURACY` (default 0.8) — results vary run to run, so it's a threshold, not per-phrase pass/fail.
 - Print a per-phrase table: pass/fail, expected, what the model returned. A provider error counts as a fail for that phrase.
-- Run with `RUN_LIVE_LLM=1 pytest -m live` after any prompt or schema change, when switching provider/model, and now and then because `-latest` model aliases change underneath you.
+- Run with `RUN_LIVE_LLM=1 pytest -m live` after any prompt or schema change, when switching provider/model, and when Google retires a model (the default is pinned, since the v1 API has no `-latest` aliases). The run stops at the first provider error, so an outage or a wrong model name costs one call.

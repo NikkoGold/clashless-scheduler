@@ -110,7 +110,7 @@ from scheduler.config import Config  # noqa: E402
 from scheduler.parsing.router import Router  # noqa: E402
 from tests.helpers.fake_provider import FakeProvider, reply  # noqa: E402
 
-GEMINI = Config(provider="gemini", model="gemini-flash-lite-latest", api_key="k")
+GEMINI = Config(provider="gemini", model="gemini-3.5-flash-lite", api_key="k")
 
 
 def run_routed(cat, text, tmp_path, replies=(), config=GEMINI, k=5):

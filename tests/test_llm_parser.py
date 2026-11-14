@@ -168,9 +168,16 @@ def test_two_invalid_replies_fail_without_a_third_call(cat):
 
 def test_a_provider_error_fails_at_once_without_a_retry(cat):
     fake = FakeProvider([ConnectionError("network down"), reply()])
-    with pytest.raises(LLMFailed, match="network down"):
+    with pytest.raises(LLMFailed, match="network down") as failed:
         LLMParser(fake).parse("x", cat)
     assert len(fake.calls) == 1
+    assert failed.value.provider_error  # the live eval stops at the first one
+
+
+def test_invalid_replies_are_not_a_provider_error(cat):
+    with pytest.raises(LLMFailed) as failed:
+        parse(cat, "nope", "nope again")
+    assert not failed.value.provider_error
 
 
 # ---- names are checked against the catalog ----
