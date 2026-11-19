@@ -4,11 +4,13 @@
   by the real Pydantic models, which stay the only definition of what each kind needs.
 - Fixed instructions first (the same for every call, so providers can cache them), then the catalog's names (no
   session times or rooms), then the user's text. Defaults are left out of the reply, and there are no source spans.
-- One retry when the reply is invalid, with the error. Provider errors aren't retried.
+- One retry when the reply is invalid, with the error. Provider errors aren't retried, except an overloaded provider
+  (HTTP 503): wait and try again a few times, each try spent from the budget.
 - Names are checked against the catalog: a wrong one goes to `unparsed`, and a wrong case is corrected.
 """
 import difflib
 import json
+import time
 from typing import Protocol, get_args
 
 from pydantic import ValidationError
@@ -92,6 +94,7 @@ Example: "ideally nothing before 10, Fridays off, my bus is slow"
 
 RETRY = "\n\nYour previous reply was invalid: {error}\nReply again with corrected JSON."
 MAX_ERROR = 300  # characters of a validation error kept in a message
+BUSY_WAITS = (2, 5, 10)  # seconds to wait before each try again when the provider is overloaded (HTTP 503)
 
 
 class Budget(Protocol):
@@ -119,9 +122,10 @@ def user_message(text: str, catalog: Catalog) -> str:
 
 
 class LLMParser:
-    def __init__(self, provider: Provider, budget: Budget | None = None):
+    def __init__(self, provider: Provider, budget: Budget | None = None, sleep=time.sleep):
         self.provider = provider
         self.budget = budget  # None: no limit
+        self.sleep = sleep
 
     def parse(self, text: str, catalog: Catalog) -> ParseResult:
         first = user_message(text, catalog)
@@ -131,10 +135,7 @@ class LLMParser:
                 if error is None:
                     raise LLMFailed("the daily limit of LLM calls is reached")
                 raise LLMFailed(f"the reply was invalid ({error}), and the daily limit leaves no call to retry")
-            try:
-                raw = self.provider.complete(SYSTEM_PROMPT, message, OUTPUT_SCHEMA)
-            except Exception as e:  # network, API or SDK error: not worth a retry
-                raise LLMFailed(f"{self.provider.name} error: {str(e)[:MAX_ERROR]}", provider_error=True) from e
+            raw = self._complete(message)
             try:
                 constraints, unparsed = _read_reply(raw)
             except _Invalid as e:
@@ -143,6 +144,29 @@ class LLMParser:
                 continue
             return _check_names(constraints, unparsed, catalog)
         raise LLMFailed(f"the reply was invalid twice ({error})")
+
+    def _complete(self, message: str) -> str:
+        """One call to the provider. Network, API and SDK errors fail at once, except an overload (503), which
+        usually clears within seconds: wait and try again, while the waits and the budget last."""
+        waits = iter(BUSY_WAITS)
+        while True:
+            try:
+                return self.provider.complete(SYSTEM_PROMPT, message, OUTPUT_SCHEMA)
+            except Exception as e:
+                wait = next(waits, None) if _http_status(e) == 503 else None
+                if wait is None or (self.budget is not None and not self.budget.try_spend()):
+                    raise LLMFailed(f"{self.provider.name} error: {str(e)[:MAX_ERROR]}", provider_error=True) from e
+                self.sleep(wait)
+
+
+def _http_status(e: Exception) -> int | None:
+    """The HTTP status of an SDK error: `code` (google-genai), `status_code` (anthropic, openai) or
+    `response.status_code` (httpx, used for Ollama)."""
+    for value in (getattr(e, "code", None), getattr(e, "status_code", None),
+                  getattr(getattr(e, "response", None), "status_code", None)):
+        if isinstance(value, int):
+            return value
+    return None
 
 
 # ---- reading the reply ----

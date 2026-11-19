@@ -24,7 +24,8 @@ from tests.test_rule_parser import CASES, catalog_for
 
 LIVE_CASES = [c for c in CASES if "llm" in c]
 DEFAULT_MAX_CALLS = 20
-RETRY_ROOM = 3  # calls left over for retries on invalid replies
+RETRY_ROOM = 3  # calls left over for retries (an invalid reply, or a provider overloaded with a 503)
+NOT_RUN = "not run"
 
 
 def _tier(case) -> str:
@@ -81,22 +82,24 @@ def test_the_llm_reads_every_phrase_in_the_table():
     rows, stopped = [], None
     for case in LIVE_CASES:
         tier = _tier(case)
-        if cap.left <= 0:
-            rows.append(("skip", tier, case["text"], "", "call limit reached"))
-            continue
         expected = [parse_constraint(c) for c in case["llm"]["constraints"]]
+        if stopped is not None:  # an outage or a wrong model name would fail every phrase: don't spend more calls
+            rows.append((NOT_RUN, tier, case["text"], _short(expected), "stopped at the provider error"))
+            continue
+        if cap.left <= 0:
+            rows.append((NOT_RUN, tier, case["text"], _short(expected), "call limit reached"))
+            continue
         try:
             got = parser.parse(case["text"], catalog_for(case)).constraints
             ok = _keys(got) == _keys(expected)
             shown = _short(got)
         except LLMFailed as e:  # a provider error or invalid reply counts as a fail for this phrase
             ok, shown = False, f"failed: {e}"
-            if e.provider_error:  # an outage or a wrong model name would fail every phrase: don't spend more calls
-                rows.append(("FAIL", tier, case["text"], _short(expected), shown))
+            if e.provider_error:  # the phrases after this one are marked not run
                 # the user-facing message is cut short; the full SDK error names the quota hit (per minute or
                 # per day) and the suggested retry delay
                 stopped = f"{e}\n\nFull provider error:\n{type(e.__cause__).__name__}: {e.__cause__}" if e.__cause__ else str(e)
-                break
+                shown = f"provider error: {e}"
         rows.append(("pass" if ok else "FAIL", tier, case["text"], _short(expected), shown))
 
     def count(tier, status=None):
@@ -104,14 +107,17 @@ def test_the_llm_reads_every_phrase_in_the_table():
 
     print(f"\nLive eval: {config.provider} {config.model} (answered by {provider.model_version}), {cap.used} calls")
     for status, tier, text, expected, got in rows:
-        print(f"  {status:4}  {tier:5}  {text!r}\n               expected: {expected}\n               got:      {got}")
-    ran_hard = count("hard") - count("hard", "skip")
+        print(f"  {status:7}  {tier:5}  {text!r}\n                  expected: {expected}\n                  got:      {got}")
+    ran_hard = count("hard") - count("hard", NOT_RUN)
     hard_accuracy = count("hard", "pass") / ran_hard if ran_hard else 0.0
-    print(f"  clear: {count('clear', 'pass')}/{count('clear')} (all must pass)")
-    print(f"  hard:  {count('hard', 'pass')}/{count('hard')} = {hard_accuracy:.0%} (threshold {min_hard_accuracy:.0%})")
+    print(f"  clear: {count('clear', 'pass')}/{count('clear')} passed, {count('clear', NOT_RUN)} not run (all must pass)")
+    print(f"  hard:  {count('hard', 'pass')}/{count('hard')} passed, {count('hard', NOT_RUN)} not run; "
+          f"{hard_accuracy:.0%} of those run (threshold {min_hard_accuracy:.0%})")
+    if stopped is not None:
+        print(f"  stopped at a provider error:\n{stopped}")
 
     assert stopped is None, f"stopped at a provider error: {stopped}"
-    skipped = [r[2] for r in rows if r[0] == "skip"]
+    skipped = [r[2] for r in rows if r[0] == NOT_RUN]
     assert not skipped, f"{len(skipped)} phrases not run (call limit reached; raise LIVE_LLM_MAX_CALLS): {skipped}"
     failed_clear = [r[2] for r in rows if r[1] == "clear" and r[0] == "FAIL"]
     assert not failed_clear, f"phrases the rules can read were misread by the LLM: {failed_clear}"

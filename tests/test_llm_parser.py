@@ -1,12 +1,14 @@
-"""LLMParser with a fake provider: the prompt, the flat output schema, validation with one retry, and name checks."""
+"""LLMParser with a fake provider: the prompt, the flat output schema, validation with one retry, name checks, and
+waiting out an overloaded provider."""
 import json
 import typing
 
+import httpx
 import pytest
 
 from scheduler.models import Compact, Constraint, DayOff, MustTake, NoClassBefore, PreferGroup, PreferInstructor
 from scheduler.parsing.base import ParseResult, PreferenceParser
-from scheduler.parsing.llm import LLM_FIELD_NAMES, OUTPUT_SCHEMA, SYSTEM_PROMPT, LLMFailed, LLMParser, user_message
+from scheduler.parsing.llm import BUSY_WAITS, LLM_FIELD_NAMES, OUTPUT_SCHEMA, SYSTEM_PROMPT, LLMFailed, LLMParser, user_message
 from tests.helpers.catalog_builder import catalog, course, grp
 from tests.helpers.fake_provider import FakeProvider, reply
 
@@ -332,3 +334,77 @@ def test_a_case_insensitive_match_to_several_names_is_ambiguous():
     assert result.constraints == []
     [frag] = result.unparsed
     assert frag.reason == "ambiguous_name" and sorted(frag.candidates) == ["AB", "ab"]
+
+
+# ---- an overloaded provider (HTTP 503) is waited out ----
+
+class StatusError(Exception):
+    """An SDK error carrying an HTTP status the way anthropic and openai do."""
+
+    def __init__(self, status):
+        super().__init__(f"{status} error")
+        self.status_code = status
+
+
+def parse_waiting(cat, *replies, budget=None):
+    fake, waits = FakeProvider(list(replies)), []
+    result = LLMParser(fake, budget=budget, sleep=waits.append).parse("x", cat)
+    return result, fake, waits
+
+
+def test_a_503_is_waited_out_and_the_call_made_again(cat):
+    result, fake, waits = parse_waiting(cat, StatusError(503), StatusError(503), reply({"kind": "day_off", "day": "Fri"}))
+    assert result.constraints == [DayOff(day="Fri")]
+    assert len(fake.calls) == 3 and waits == list(BUSY_WAITS[:2])
+    assert fake.calls[1]["user"] == fake.calls[0]["user"]  # the same request, not the invalid-reply retry
+
+
+def test_a_503_that_outlasts_the_waits_is_a_provider_error(cat):
+    fake, waits = FakeProvider([StatusError(503)] * (len(BUSY_WAITS) + 1) + [reply()]), []
+    with pytest.raises(LLMFailed, match="503") as failed:
+        LLMParser(fake, sleep=waits.append).parse("x", cat)
+    assert failed.value.provider_error
+    assert waits == list(BUSY_WAITS) and len(fake.calls) == len(BUSY_WAITS) + 1
+
+
+@pytest.mark.parametrize("status", [400, 404, 429, 500])
+def test_other_http_errors_fail_at_once_without_waiting(cat, status):
+    fake, waits = FakeProvider([StatusError(status), reply()]), []
+    with pytest.raises(LLMFailed) as failed:
+        LLMParser(fake, sleep=waits.append).parse("x", cat)
+    assert failed.value.provider_error and waits == [] and len(fake.calls) == 1
+
+
+def test_each_try_after_a_503_is_spent_from_the_budget(cat):
+    budget = Budget(5)
+    parse_waiting(cat, StatusError(503), reply(), budget=budget)
+    assert budget.spent == 2
+
+
+def test_a_503_with_no_budget_left_fails_without_waiting(cat):
+    fake, waits = FakeProvider([StatusError(503), reply()]), []
+    with pytest.raises(LLMFailed, match="503") as failed:
+        LLMParser(fake, budget=Budget(1), sleep=waits.append).parse("x", cat)
+    assert failed.value.provider_error and waits == [] and len(fake.calls) == 1
+
+
+def test_a_503_on_the_invalid_reply_retry_is_waited_out_too(cat):
+    result, fake, waits = parse_waiting(cat, "bad", StatusError(503), reply({"kind": "day_off", "day": "Fri"}))
+    assert result.constraints == [DayOff(day="Fri")] and waits == [BUSY_WAITS[0]]
+    assert "invalid" in fake.calls[2]["user"]  # the retry still carries the error
+
+
+def _genai_503():
+    errors = pytest.importorskip("google.genai.errors")
+    return errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+
+
+def _httpx_503():
+    request = httpx.Request("POST", "http://box:11434/api/chat")
+    return httpx.HTTPStatusError("503", request=request, response=httpx.Response(503, request=request))
+
+
+@pytest.mark.parametrize("make", [_genai_503, _httpx_503, lambda: StatusError(503)], ids=["gemini", "ollama", "anthropic-openai"])
+def test_the_503_is_recognised_in_each_sdk_error_shape(cat, make):
+    result, _, waits = parse_waiting(cat, make(), reply())
+    assert waits == [BUSY_WAITS[0]]
