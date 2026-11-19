@@ -1,6 +1,8 @@
 # Phrase -> expected parse, parsed against tests/data/phrase_catalog.json.
 # `rules:` is checked exactly by tests/test_rule_parser.py (constraints unordered, unparsed in order).
-# `llm:` (optional) feeds the live LLM eval; unparsed is ignored there.
+# `llm:` (optional) feeds the live LLM eval; unparsed is ignored there. Every `llm:` phrase must pass. Most should be
+# phrases the rules leave unparsed, since those are what the LLM gets in real use; keep about 17 so the run fits in
+# LIVE_LLM_MAX_CALLS (20) with room for retries.
 # Constraint defaults apply when omitted: strength hard, weight 5 (compact defaults to soft).
 # unparsed entries: {text: <original fragment>, reason: <code>, candidates: [...] (optional, default [])}
 
@@ -113,7 +115,6 @@
 # ---- free blocks ----
 - text: "keep 12-13 free"
   rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
-  llm: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}]}
   tags: [free]
 - text: "keep 12–13 free"
   rules: {constraints: [{kind: free_block, start: "12:00", end: "13:00"}], unparsed: []}
@@ -152,7 +153,6 @@
   tags: [load]
 - text: "no more than three days a week"
   rules: {constraints: [{kind: max_days, n: 3}], unparsed: []}
-  llm: {constraints: [{kind: max_days, n: 3}]}
   tags: [load]
 - text: "max 6 hours a day"
   rules: {constraints: [{kind: max_hours_per_day, h: 6}], unparsed: []}
@@ -162,7 +162,6 @@
   tags: [load]
 - text: "no gaps longer than 1 hour"
   rules: {constraints: [{kind: max_gap, minutes: 60}], unparsed: []}
-  llm: {constraints: [{kind: max_gap, minutes: 60}]}
   tags: [gaps]
 - text: "max gap 90 minutes"
   rules: {constraints: [{kind: max_gap, minutes: 90}], unparsed: []}
@@ -235,7 +234,6 @@
   tags: [names, vague]
 - text: "drop CS101"
   rules: {constraints: [{kind: exclude_course, course: CS101}], unparsed: []}
-  llm: {constraints: [{kind: exclude_course, course: CS101}]}
   tags: [names]
 - text: "no Databases"
   rules: {constraints: [{kind: exclude_course, course: DB}], unparsed: []}
@@ -506,4 +504,24 @@
 - text: "I need to finish early on Thursdays, by 2"
   rules: {constraints: [], unparsed: [{text: "I need to finish early on Thursdays", reason: not_understood}, {text: "by 2", reason: not_understood}]}
   llm: {constraints: [{kind: no_class_after, time: "14:00", days: [Thu]}]}
+  tags: [time, days, llm]
+- text: "I don't want to be on campus on Sundays"
+  rules: {constraints: [], unparsed: [{text: "I don't want to be on campus on Sundays", reason: not_understood}]}
+  llm: {constraints: [{kind: day_off, day: Sun}]}
+  tags: [days, llm]
+- text: "nothing past 6 in the evening"
+  rules: {constraints: [], unparsed: [{text: "nothing past 6 in the evening", reason: not_understood}]}
+  llm: {constraints: [{kind: no_class_after, time: "18:00"}]}
+  tags: [time, llm]
+- text: "I'd like to avoid Levi if I can"
+  rules: {constraints: [], unparsed: [{text: "I'd like to avoid Levi if I can", reason: unknown_name}]}
+  llm: {constraints: [{kind: avoid_instructor, name: Levi, strength: soft}]}
+  tags: [names, llm]
+- text: "I need any two of Algorithms, Databases and Intro to Programming"
+  rules: {constraints: [], unparsed: [{text: "I need any two of Algorithms, Databases and Intro to Programming", reason: not_understood}]}
+  llm: {constraints: [{kind: take_n_of, courses: [ALG, DB, CS101], n: 2}]}
+  tags: [names, llm]
+- text: "Mondays and Wednesdays I work until 1, so nothing before then those days"
+  rules: {constraints: [], unparsed: [{text: "Mondays and Wednesdays I work until 1", reason: not_understood}, {text: "so nothing before then those days", reason: not_understood}]}
+  llm: {constraints: [{kind: no_class_before, time: "13:00", days: [Mon, Wed]}]}
   tags: [time, days, llm]

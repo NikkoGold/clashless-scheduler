@@ -201,7 +201,7 @@ A single page:
 3. The rule parser and its tests (a set of test phrases with expected constraints).
 4. Provider adapters, the LLM parser, the router (whole-text cache → rules first → LLM only if needed; budget; fallback with the reason shown), and config reading/writing `.env` for setup.
    - Discussed before starting: how to keep each call as cheap as possible, so the app works on free tiers and tight limits, and whether the LLM returns source spans (it doesn't). The decisions are under Parsing → LLMParser and Router.
-   - The live eval (`tests/test_llm_live.py`, opt-in) runs about 15 phrases against Gemini, capped at 20 calls. It's the only check of the prompt itself with a real model.
+   - The live eval (`tests/test_llm_live.py`, opt-in) runs up to 17 phrases against Gemini (most of them text the rules leave unparsed), capped at 20 calls, and every phrase must pass. It's the only check of the prompt itself with a real model.
 5. The CLI (`--review`, `--pick`, `--no-required`, `--offline`), plus `python -m scheduler setup` and the first-run offer and offline notice.
 6. The FastAPI endpoints and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label).
    - **A loading indicator while solving.** A request can take up to the 3-minute limit: a reasonable wait, but a long time for a frozen screen. Show that it's working, and show the `timed_out` note clearly when it applies.

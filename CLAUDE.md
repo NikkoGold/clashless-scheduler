@@ -54,7 +54,7 @@ python -m scheduler setup              # choose a provider + key, or continue of
 uvicorn scheduler.web.app:app --reload
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free"
 pytest -q                              # offline suite
-$env:RUN_LIVE_LLM=1; pytest -m live    # opt-in real-LLM eval
+$env:RUN_LIVE_LLM=1; pytest -m live -s; Remove-Item Env:RUN_LIVE_LLM   # opt-in real-LLM eval; clears the flag so later runs stay offline
 ```
 
 ## Testing (pytest)
@@ -74,7 +74,7 @@ Key rules:
 - Reuse the shared helpers in `tests/helpers/` (catalog builder, `assert_valid_schedule`/`assert_valid_results` invariant checker, brute-force oracle). Don't redefine them inside test files.
 - Every solver test runs its results through the invariant checker.
 - Rule parser cases go in `tests/data/phrases.yaml` (phrase → expected constraints and unparsed text). Optional `llm:` expectations feed the live eval.
-- Markers: `slow` (runs by default) and `live` (real LLM calls, skipped unless `RUN_LIVE_LLM=1`, capped by `LIVE_LLM_MAX_CALLS`, default 20). The live eval is the only test that may use the network. Run it with `RUN_LIVE_LLM=1 pytest -m live` after any prompt, schema or model change.
+- Markers: `slow` (runs by default) and `live` (real LLM calls, skipped unless `RUN_LIVE_LLM=1`, capped by `LIVE_LLM_MAX_CALLS`, default 20). The live eval is the only test that may use the network. Run it only after a change that affects what the model is sent or which model answers (the prompt, the output schema, the parser conventions it states, the `llm:` phrases, the Gemini adapter, or the model), never as part of routine test runs: each run costs up to 20 calls of the free-tier quota. Clear the flag afterwards (`Remove-Item Env:RUN_LIVE_LLM`), since it stays set in the PowerShell session. Every `llm:` phrase must pass (no accuracy threshold by default), and most of them should be phrases the rules leave unparsed.
 - Name tests after behaviour (`test_back_to_back_classes_do_not_clash`), one behaviour per test, and parametrize variants. Use `tmp_path` for written files.
 - Solver behaviours that must have tests (from plan.md):
   - back-to-back 10–12 / 12–14 is allowed
