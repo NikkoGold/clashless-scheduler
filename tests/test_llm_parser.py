@@ -10,7 +10,7 @@ from scheduler.models import Compact, Constraint, DayOff, MustTake, NoClassBefor
 from scheduler.parsing.base import ParseResult, PreferenceParser
 from scheduler.parsing.llm import BUSY_WAITS, LLM_FIELD_NAMES, OUTPUT_SCHEMA, SYSTEM_PROMPT, LLMFailed, LLMParser, user_message
 from tests.helpers.catalog_builder import catalog, course, grp
-from tests.helpers.fake_provider import FakeProvider, reply
+from tests.helpers.fake_provider import FakeProvider, StatusError, reply
 
 CONSTRAINT_MODELS = typing.get_args(typing.get_args(Constraint)[0])
 
@@ -337,14 +337,6 @@ def test_a_case_insensitive_match_to_several_names_is_ambiguous():
 
 
 # ---- an overloaded provider (HTTP 503) is waited out ----
-
-class StatusError(Exception):
-    """An SDK error carrying an HTTP status the way anthropic and openai do."""
-
-    def __init__(self, status):
-        super().__init__(f"{status} error")
-        self.status_code = status
-
 
 def parse_waiting(cat, *replies, budget=None):
     fake, waits = FakeProvider(list(replies)), []

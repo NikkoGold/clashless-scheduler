@@ -26,6 +26,15 @@ class FakeProvider:
         return reply if isinstance(reply, str) else json.dumps(reply)
 
 
+class StatusError(Exception):
+    """An SDK error carrying an HTTP status the way the anthropic and openai SDKs do: `StatusError(503)` is an
+    overloaded provider, which LLMParser waits out."""
+
+    def __init__(self, status: int):
+        super().__init__(f"{status} error")
+        self.status_code = status
+
+
 def reply(*constraints, unparsed=()) -> dict:
     """A well-formed model reply: `reply({"kind": "day_off", "day": "Fri"}, unparsed=[("I hate Mondays", "not_understood")])`.
 

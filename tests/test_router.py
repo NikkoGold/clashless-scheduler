@@ -16,7 +16,7 @@ from scheduler.parsing.providers import make_provider
 from scheduler.parsing.providers.ollama import OllamaProvider
 from scheduler.parsing.router import CACHE_SIZE, OFFLINE_NOTE, Router, RoutedParse, cache_key
 from scheduler.parsing.rules import RuleParser
-from tests.helpers.fake_provider import FakeProvider, reply
+from tests.helpers.fake_provider import FakeProvider, StatusError, reply
 
 PHRASE_CATALOG = Path(__file__).parent / "data" / "phrase_catalog.json"
 CLEAR = "no classes before 10, fridays off"  # the rule parser understands all of it
@@ -174,6 +174,23 @@ def test_the_retry_is_skipped_when_the_first_call_used_the_last_one_left(tmp_pat
     routed = r.parse(VAGUE, cat)
     assert "daily limit" in routed.path and len(fake.calls) == 1
     assert usage(tmp_path)["count"] == 3
+
+
+def test_a_try_after_a_503_is_counted_in_the_saved_daily_usage(tmp_path, cat, monkeypatch):
+    monkeypatch.setattr("scheduler.parsing.llm.BUSY_WAITS", (0, 0, 0))  # the waits themselves are tested in test_llm_parser
+    r, fake, _ = router(tmp_path, StatusError(503), LLM_REPLY)
+    assert r.parse(VAGUE, cat).path == "llm" and len(fake.calls) == 2
+    assert usage(tmp_path) == {"date": TODAY.isoformat(), "count": 2}
+
+
+def test_a_503_on_the_last_call_left_falls_back_to_the_rules_with_the_error(tmp_path, cat, monkeypatch):
+    monkeypatch.setattr("scheduler.parsing.llm.BUSY_WAITS", (0, 0, 0))
+    set_usage(tmp_path, TODAY, 2)
+    r, fake, _ = router(tmp_path, StatusError(503), LLM_REPLY, config=gemini(max_calls_per_day=3))
+    routed = r.parse(VAGUE, cat)
+    assert routed.path.startswith("rules (LLM unavailable") and "503" in routed.path
+    assert len(fake.calls) == 1 and usage(tmp_path)["count"] == 3
+    assert routed.result.unparsed  # what the rules couldn't read is still shown
 
 
 def test_the_count_starts_again_on_a_new_day(tmp_path, cat):
