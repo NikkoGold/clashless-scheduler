@@ -31,16 +31,15 @@ from scheduler.config import (
     write_setup,
 )
 from scheduler.constraints import describe
-from scheduler.models import Catalog, Constraint, MustTake, Schedule, SolveResult, TakeNOf, format_time
+from scheduler.models import Catalog, Constraint, Schedule, SolveResult
 from scheduler.parsing.base import ParseResult
 from scheduler.parsing.providers import Provider, make_provider
 from scheduler.parsing.router import RoutedParse, Router
-from scheduler.present import differences, either, rule, unparsed_message
+from scheduler.present import PROVIDER_CHOICES, SETUP_COMMAND, either, parser_label, rule, schedule_view, unparsed_message
+from scheduler.selection import Selection, SelectionError, default_modes, select_courses
 from scheduler.solver import solve
 
 TOP_MIN, TOP_MAX, TOP_DEFAULT = 1, 20, 5
-SETUP_COMMAND = "python -m scheduler setup"
-SETUP_HINT = f'run "{SETUP_COMMAND}" to add an LLM'
 BASIC_PHRASES = 'basic phrases like "no classes before 10" or "Fridays off"'
 FIRST_RUN_NOTICE = (f"No LLM is set up, so this run is offline. Setup is required to understand anything beyond "
                     f"{BASIC_PHRASES}: run {SETUP_COMMAND}.")
@@ -152,6 +151,8 @@ def run(argv: list[str] | None = None, console: Console | None = None, out: Text
             if len(argv) > 1:
                 raise UsageError(f"setup takes no arguments (got {' '.join(argv[1:])})")
             return Outcome(code=run_setup(console, out))
+        if argv[:1] == ["web"]:
+            return Outcome(code=_web(argv[1:], out, err))
         return _schedule(argv, console, out, err, provider_factory)
     except UsageError as e:
         print(f"Error: {e}", file=err)
@@ -160,14 +161,31 @@ def run(argv: list[str] | None = None, console: Console | None = None, out: Text
         return Outcome(code=e.code)
 
 
+def _web(argv, out: TextIO, err: TextIO) -> int:
+    """python -m scheduler web [--port N] [--no-browser]: the page, served on this computer only."""
+    from scheduler.web import server  # imported only when used: FastAPI and uvicorn aren't needed for the CLI
+
+    p = _ArgumentParser(out, err, prog="python -m scheduler web",
+                        description="Open the scheduler in your browser (served on this computer only).")
+    p.add_argument("--port", type=int, help=f"the port to use (default {server.DEFAULT_PORT}, or the next free one)")
+    p.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    args = p.parse_args(argv)
+    try:
+        server.serve(port=args.port, open_browser=not args.no_browser, out=out)
+    except server.PortInUse as e:
+        raise UsageError(f"port {e.port} is in use: choose another with --port, or leave it out to use the next "
+                         "free one") from None
+    return 0
+
+
 def _schedule(argv, console: Console, out: TextIO, err: TextIO, provider_factory) -> Outcome:
     args = _arguments(out, err).parse_args(argv)
     if args.prefs == "-" and args.review:
         raise UsageError("--review reads your commands from stdin, so the preferences can't come from stdin too: "
                          "give them as text")
     catalog = _load(args.catalog)
-    required, pool, n = _courses(catalog, args)
-    courses = [MustTake(course=c) for c in required] + ([TakeNOf(courses=pool, n=n)] if pool else [])
+    selection = _courses(catalog, args)
+    courses = selection.constraints
     text = (console.read_all() if args.prefs == "-" else args.prefs).strip()
 
     config = load_config()
@@ -179,8 +197,8 @@ def _schedule(argv, console: Console, out: TextIO, err: TextIO, provider_factory
     router = Router(config, provider_factory=provider_factory)
     routed = router.parse(text, catalog) if text else None
 
-    print(_courses_line(required, pool, n), file=out)
-    print(_parser_line(routed, config, args.offline), file=out)
+    print(f"Courses: {selection.summary()}", file=out)
+    print(f"Parser: {parser_label(routed, config, args.offline)}", file=out)
     print(_settings_line(config), file=out)
     if config.problem and (routed is None or config.problem not in (routed.note or "")):
         print(f"Note: {config.problem}", file=out)
@@ -220,8 +238,8 @@ def _load(path: str) -> Catalog:
 
 # ---- courses: required, --pick, --drop, --no-required ----
 
-def _courses(catalog: Catalog, args) -> tuple[list[str], list[str], int]:
-    """(required courses kept, the pick pool, how many to take from it)."""
+def _courses(catalog: Catalog, args) -> Selection:
+    """The courses the flags choose: required ones (minus --drop / --no-required) and the --pick pool."""
     ids = {c.id.lower(): c.id for c in catalog.courses}
 
     def resolve(token: str, flag: str) -> str:
@@ -244,7 +262,7 @@ def _courses(catalog: Catalog, args) -> tuple[list[str], list[str], int]:
             raise UsageError(f"{flag}: {', '.join(twice)} is listed twice")
         return found
 
-    pool, n = [], 0
+    pool, n = [], None
     if args.pick is not None:
         spec, head = args.pick, None
         if ":" in spec:
@@ -257,9 +275,7 @@ def _courses(catalog: Catalog, args) -> tuple[list[str], list[str], int]:
             if n < 1:
                 raise UsageError("--pick: N must be at least 1")
         pool = id_list(spec, "--pick")
-        n = n if head is not None else len(pool)
-        if n > len(pool):
-            raise UsageError(f"--pick: can't take {n} from a pool of {len(pool)}")
+        n = n if head is not None else None
 
     required_ids = [c.id for c in catalog.courses if c.required]
     drop = id_list(args.drop, "--drop") if args.drop is not None else []
@@ -269,34 +285,21 @@ def _courses(catalog: Catalog, args) -> tuple[list[str], list[str], int]:
         if c in pool:
             raise UsageError(f"{c} is in both --drop and --pick: choose one")
 
-    required = [] if args.no_required else [c for c in required_ids if c not in drop and c not in pool]
-    if not required and not pool:
-        why = ("the catalog marks no course as required" if not required_ids
-               else "every required course is switched off")
-        raise UsageError(f"no courses to schedule: {why}. Choose some with --pick, e.g. --pick 2:A,B,C")
-    return required, pool, n
-
-
-def _courses_line(required: list[str], pool: list[str], n: int) -> str:
-    parts = ([f"{', '.join(required)} (required)"] if required else []) + \
-            ([f"{n} of {', '.join(pool)} (pool)"] if pool else [])
-    return "Courses: " + "; ".join(parts)
+    # the flags as picker modes: --no-required and --drop switch courses off, --pick puts them in the pool
+    modes = default_modes(catalog)
+    if args.no_required:
+        modes = {c: "off" if mode == "required" else mode for c, mode in modes.items()}
+    modes.update({c: "off" for c in drop})
+    modes.update({c: "pool" for c in pool})
+    try:
+        return select_courses(catalog, modes, n if pool else None)
+    except SelectionError as e:
+        if str(e).startswith("no courses to schedule"):
+            raise UsageError(f"{e}. Choose some with --pick, e.g. --pick 2:A,B,C") from None
+        raise UsageError(f"--pick: {e}") from None
 
 
 # ---- settings and the parser path ----
-
-def _parser_line(routed: RoutedParse | None, config: Config, offline_flag: bool) -> str:
-    if routed is None:
-        return "Parser: none (no preferences given)"
-    path = routed.path
-    if path == "llm":
-        path = f"llm ({config.model})"
-    elif path == "cache":
-        path = f"cache (an earlier reply from {config.model})"
-    elif path == "rules (offline)" and not offline_flag and not config.needs_setup:
-        path += f": {SETUP_HINT}"
-    return f"Parser: {path}"
-
 
 def _settings_line(config: Config) -> str:
     where = str(config.source) if config.source else "none saved"
@@ -356,8 +359,7 @@ def run_setup(console: Console, out: TextIO) -> int:
     return 0
 
 
-CHOICES = [("gemini", "Gemini (recommended; has a free tier)"), ("anthropic", "Anthropic"), ("openai", "OpenAI"),
-           ("ollama", "Ollama (runs on this computer)"), ("none", "none: continue offline")]
+CHOICES = PROVIDER_CHOICES
 
 
 def _ask_provider(console: Console, out: TextIO) -> str:
@@ -608,40 +610,27 @@ def _print_result(result: SolveResult, catalog: Catalog, verbose: bool, out: Tex
         print(f"\n{result.note}", file=out)
 
 
-def _unique(items) -> list[str]:
-    return list(dict.fromkeys(x for x in items if x))
-
-
 def _print_schedule(i: int, total: int, s: Schedule, best: Schedule, catalog: Catalog, verbose: bool,
                     out: TextIO) -> None:
-    print(f"\nSchedule {i} of {total} (soft penalty {s.penalty})", file=out)
+    view = schedule_view(s, best, catalog)
+    print(f"\nSchedule {i} of {total} (soft penalty {view['penalty']})", file=out)
     if i > 1:
-        print(f"  Differs from #1: {'; '.join(differences(best, s)) or 'nothing visible'}", file=out)
-    rows = []
-    for ch in s.choices:
-        label = f"{ch.course} {ch.component} {either(ch.option.group_ids)}"
-        if len(ch.option.group_ids) > 1 and list(ch.register_for) != list(ch.option.group_ids):
-            label += f" (register for {either(ch.register_for)})"
-        for k, session in enumerate(ch.option.sessions):
-            rooms = _unique(g.sessions[k].room for g in ch.option.groups)
-            instructors = _unique(g.instructor for g in ch.option.groups)
-            line = f"  {session.day} {format_time(session.start)}-{format_time(session.end)}  {label}"
-            line += f"  room {either(rooms)}" if rooms else ""
-            line += f"  {either(instructors)}" if instructors else ""
-            rows.append((catalog.week.index(session.day), session.start, line))
-    for *_, line in sorted(rows):
+        print(f"  Differs from #1: {'; '.join(view['differs']) or 'nothing visible'}", file=out)
+    for x in view["sessions"]:
+        line = f"  {x['day']} {x['start']}-{x['end']}  {x['label']}"
+        line += f"  room {x['rooms']}" if x["rooms"] else ""
+        line += f"  {x['instructors']}" if x["instructors"] else ""
         print(line, file=out)
-    for ch in s.choices:
-        if ch.register_note:
-            print(f"  Note: {ch.register_note}", file=out)
+    for note in view["notes"]:
+        print(f"  Note: {note}", file=out)
     if verbose:
         print("  Rules:", file=out)
-        for item in s.breakdown:
-            cost = f": cost {item.weighted}" if not item.met else ""
-            print(f"    {'met' if item.met else 'broken':<7}{rule(item.constraint)}{cost}", file=out)
+        for r in view["rules"]:
+            cost = f": cost {r['cost']}" if not r["met"] else ""
+            print(f"    {'met' if r['met'] else 'broken':<7}{r['text']}{cost}", file=out)
         return
-    broken = [item for item in s.breakdown if not item.met]
-    for item in broken:
-        print(f"  Broken: {rule(item.constraint)}: cost {item.weighted}", file=out)
+    broken = [r for r in view["rules"] if not r["met"]]
+    for r in broken:
+        print(f"  Broken: {r['text']}: cost {r['cost']}", file=out)
     if not broken:
         print("  All rules met.", file=out)

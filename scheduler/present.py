@@ -1,7 +1,14 @@
-"""Plain-language text about parses and results, shared by the interfaces (the CLI now, the API and UI later)."""
+"""Plain-language text about parses and results, shared by the CLI and the web API so both say the same thing."""
+from scheduler.config import Config
 from scheduler.constraints import describe
-from scheduler.models import Constraint, Schedule
+from scheduler.models import Catalog, Constraint, Schedule, format_time
 from scheduler.parsing.base import UnparsedFragment
+
+SETUP_COMMAND = "python -m scheduler setup"
+SETUP_HINT = f'run "{SETUP_COMMAND}" to add an LLM'
+# the setup choices, in the order offered (CLI and web)
+PROVIDER_CHOICES = [("gemini", "Gemini (recommended; has a free tier)"), ("anthropic", "Anthropic"), ("openai", "OpenAI"),
+                    ("ollama", "Ollama (runs on this computer)"), ("none", "none: continue offline")]
 
 
 def either(items: list[str]) -> str:
@@ -54,3 +61,47 @@ def differences(best: Schedule, other: Schedule) -> list[str]:
     found += [f"adds {c}" for c in sorted(b_courses - a_courses)]
     found += [f"drops {c}" for c in sorted(a_courses - b_courses)]
     return found
+
+
+def parser_label(routed, config: Config, offline_flag: bool = False) -> str:
+    """Which parser read the text, e.g. "llm (gemini-3.5-flash-lite)" or "rules (offline): run ... to add an LLM"."""
+    if routed is None:
+        return "none (no preferences given)"
+    path = routed.path
+    if path == "llm":
+        return f"llm ({config.model})"
+    if path == "cache":
+        return f"cache (an earlier reply from {config.model})"
+    if path == "rules (offline)" and not offline_flag and not config.needs_setup:
+        return f"{path}: {SETUP_HINT}"
+    return path
+
+
+def _unique(items) -> list[str]:
+    return list(dict.fromkeys(x for x in items if x))
+
+
+def schedule_view(s: Schedule, best: Schedule, catalog: Catalog) -> dict:
+    """One schedule as display text: its sessions by day and time, notes, every rule met or broken, and how it
+    differs from the best one."""
+    sessions = []
+    for ch in s.choices:
+        label = f"{ch.course} {ch.component} {either(ch.option.group_ids)}"
+        if len(ch.option.group_ids) > 1 and list(ch.register_for) != list(ch.option.group_ids):
+            label += f" (register for {either(ch.register_for)})"
+        for k, session in enumerate(ch.option.sessions):
+            rooms = _unique(g.sessions[k].room for g in ch.option.groups)
+            instructors = _unique(g.instructor for g in ch.option.groups)
+            sessions.append({"day": session.day, "start": format_time(session.start), "end": format_time(session.end),
+                             "course": ch.course, "component": ch.component, "label": label,
+                             "rooms": either(rooms) if rooms else "", "instructors": either(instructors) if instructors else ""})
+    order = {d: i for i, d in enumerate(catalog.week)}
+    sessions.sort(key=lambda x: (order[x["day"]], x["start"]))
+    return {
+        "penalty": s.penalty,
+        "sessions": sessions,
+        "notes": [ch.register_note for ch in s.choices if ch.register_note],
+        "rules": [{"text": rule(item.constraint), "met": item.met, "cost": 0 if item.met else item.weighted}
+                  for item in s.breakdown],
+        "differs": [] if s is best else differences(best, s),
+    }
