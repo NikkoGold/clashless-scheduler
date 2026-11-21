@@ -6,11 +6,15 @@
 4. If the LLM can't be used (no key, SDK missing, daily limit, an error, invalid replies), the rules result is
    used and the path says why.
 The cache and the daily call count are small files in the user-wide folder (config.cache_dir()), so they also work
-across CLI runs and folders. See plan.md, Router.
+across CLI runs and folders. Several tabs of the web page share them: each file's read-then-write happens under a
+lock, so parallel requests can't both pass the daily limit or drop each other's cache entries. See plan.md, Router.
 """
 import hashlib
 import json
 import os
+import tempfile
+import threading
+import time
 from datetime import date
 from pathlib import Path
 from typing import Callable
@@ -36,6 +40,17 @@ class RoutedParse(BaseModel):
     note: str | None = None  # anything else the user should know: the offline notice, a setting that couldn't be used
 
 
+_LOCKS: dict[Path, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+REPLACE_TRIES = 10  # Windows refuses to replace a file another process is reading at that moment: wait briefly
+
+
+def _lock(path: Path) -> threading.Lock:
+    """One lock per file, shared by every Router in this process (each web request makes its own Router)."""
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(Path(path).resolve(), threading.Lock())
+
+
 def _read_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -44,10 +59,23 @@ def _read_json(path: Path):
 
 
 def _write_json(path: Path, data) -> None:
+    """Write through a temporary file of its own, then move it into place: never a half-written file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data), encoding="utf-8")
-    os.replace(tmp, path)  # never leaves a half-written file
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.stem + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data))
+        for attempt in range(REPLACE_TRIES):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == REPLACE_TRIES - 1:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 class DailyBudget:
@@ -56,18 +84,23 @@ class DailyBudget:
     def __init__(self, path: Path, limit: int, today: Callable[[], date]):
         self.path, self.limit, self.today = path, limit, today
 
-    def used(self) -> int:
+    def _count(self) -> int:
         data = _read_json(self.path)
         if isinstance(data, dict) and data.get("date") == self.today().isoformat() and isinstance(data.get("count"), int):
             return data["count"]
         return 0
 
+    def used(self) -> int:
+        with _lock(self.path):
+            return self._count()
+
     def try_spend(self) -> bool:
-        count = self.used()
-        if count >= self.limit:
-            return False
-        _write_json(self.path, {"date": self.today().isoformat(), "count": count + 1})
-        return True
+        with _lock(self.path):  # check and count in one step: parallel requests can't both take the last call
+            count = self._count()
+            if count >= self.limit:
+                return False
+            _write_json(self.path, {"date": self.today().isoformat(), "count": count + 1})
+            return True
 
 
 class ParseCache:
@@ -81,19 +114,21 @@ class ParseCache:
         return data if isinstance(data, dict) else {}
 
     def get(self, key: str) -> ParseResult | None:
-        entry = self._load().get(key)
+        with _lock(self.path):
+            entry = self._load().get(key)
         try:
             return ParseResult.model_validate(entry) if entry is not None else None
         except ValidationError:
             return None
 
     def put(self, key: str, result: ParseResult) -> None:
-        entries = self._load()
-        entries.pop(key, None)
-        entries[key] = result.model_dump(mode="json")
-        while len(entries) > self.size:
-            entries.pop(next(iter(entries)))
-        _write_json(self.path, entries)
+        with _lock(self.path):  # read, add and write in one step, so parallel puts don't drop each other's entries
+            entries = self._load()
+            entries.pop(key, None)
+            entries[key] = result.model_dump(mode="json")
+            while len(entries) > self.size:
+                entries.pop(next(iter(entries)))
+            _write_json(self.path, entries)
 
 
 def cache_key(text: str, catalog: Catalog, config: Config) -> str:
