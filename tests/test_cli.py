@@ -240,6 +240,7 @@ def test_an_ambiguous_name_lists_the_candidates():
     ("ambiguous_name", ["SHM", "SHO"], "could mean SHM or SHO"),
     ("invalid_time", [], "impossible time"),
     ("conflicting_strength", [], "keep one"),
+    ("unclear_or", [], '"or" is unclear here (one of them, or all?). Use "and" for all of them, or name one.'),
 ])
 def test_every_unparsed_reason_says_what_to_do(reason, candidates, says):
     fragment = UnparsedFragment(text="some words", reason=reason, candidates=candidates)
@@ -387,3 +388,8 @@ def test_no_arguments_prints_usage():
 def test_help_prints_usage_and_exits_cleanly():
     run = cli("--help")
     assert run.code == 0 and "--pick" in run.out and "--drop" in run.out
+
+
+def test_an_unclear_or_says_why_it_wasnt_used():
+    run = cli(SAMPLE, "drop XBI or HEP", "--offline")
+    assert '"drop XBI or HEP": "or" is unclear here' in run.out

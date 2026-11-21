@@ -17,12 +17,14 @@ from pydantic import ValidationError
 
 from scheduler.constraints import describe
 from scheduler.models import Catalog, Constraint, Day, parse_constraint
-from scheduler.parsing.base import ParseResult, UnparsedFragment, UnparsedReason
+from scheduler.parsing.base import RULES_ONLY_REASONS, ParseResult, UnparsedFragment, UnparsedReason
 from scheduler.parsing.providers import Provider
 
 KINDS = [m.model_fields["kind"].default for m in get_args(get_args(Constraint)[0])]
 DAYS = list(get_args(Day))
 _TEXT = {"type": "string"}
+# the reasons the model may give: not the rule parser's own, so adding one there doesn't change what the model is sent
+LLM_REASONS = [r for r in get_args(UnparsedReason) if r not in RULES_ONLY_REASONS]
 _DAY = {"type": "string", "enum": DAYS}
 # parameters the model sees under a clearer name: "name" was read as the constraint's own name ("name": "prefer_group")
 LLM_FIELD_NAMES = {"name": "instructor"}
@@ -50,7 +52,7 @@ OUTPUT_SCHEMA = {
         "constraints": {"type": "array", "items": {"type": "object", "properties": CONSTRAINT_PARAMS, "required": ["kind", "strength"]}},
         "unparsed": {"type": "array", "items": {
             "type": "object",
-            "properties": {"text": _TEXT, "reason": {"type": "string", "enum": list(get_args(UnparsedReason))}},
+            "properties": {"text": _TEXT, "reason": {"type": "string", "enum": LLM_REASONS}},
             "required": ["text", "reason"],
         }},
     },
@@ -206,6 +208,9 @@ def _read_reply(raw: str) -> tuple[list[Constraint], list[UnparsedFragment]]:
         except ValidationError as e:
             problems.append(f"constraint {i} ({item.get('kind')}): {_errors(e)}")
     for i, frag in enumerate(frags, 1):
+        if isinstance(frag, dict) and frag.get("reason") in RULES_ONLY_REASONS:
+            problems.append(f"unparsed {i}: reason must be one of {', '.join(LLM_REASONS)}")
+            continue
         try:
             unparsed.append(UnparsedFragment.model_validate(frag))
         except ValidationError as e:

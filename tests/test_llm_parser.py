@@ -183,8 +183,9 @@ def test_unparsed_fragments_from_the_model_reach_the_result_and_there_are_no_spa
     (reply({"kind": "day_off"}), "day"),
     (reply({"kind": "compact", "strength": "hard"}), "compact"),
     (reply(unparsed=[("x", "confused")]), "reason"),
+    (reply(unparsed=[("x", "unclear_or")]), "reason"),  # the rule parser's own reason, not one the model may give
 ], ids=["bad-json", "not-object", "no-constraints", "unknown-kind", "extra-param", "missing-param", "hard-compact",
-        "bad-unparsed-reason"])
+        "bad-unparsed-reason", "rules-only-reason"])
 def test_an_invalid_reply_is_retried_once_with_the_error(cat, bad, mentions):
     result, fake = parse(cat, bad, reply({"kind": "day_off", "day": "Fri"}))
     assert result.constraints == [DayOff(day="Fri")]
@@ -400,3 +401,11 @@ def _httpx_503():
 def test_the_503_is_recognised_in_each_sdk_error_shape(cat, make):
     result, _, waits = parse_waiting(cat, make(), reply())
     assert waits == [BUSY_WAITS[0]]
+
+
+def test_the_llm_is_offered_the_same_unparsed_reasons_as_before():
+    # unclear_or is the rule parser's own: adding it to the reply format would change what the model is sent,
+    # which needs a live eval run (see test-llm-parser)
+    reasons = OUTPUT_SCHEMA["properties"]["unparsed"]["items"]["properties"]["reason"]["enum"]
+    assert reasons == ["not_understood", "unknown_name", "ambiguous_name", "invalid_time", "conflicting_strength"]
+    assert "unclear_or" not in SYSTEM_PROMPT

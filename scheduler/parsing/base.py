@@ -11,7 +11,10 @@ UnparsedReason = Literal[
     "ambiguous_name",        # several catalog names fit equally well
     "invalid_time",          # an impossible time or range, such as "before 25" or "13-12"
     "conflicting_strength",  # both hard and soft wording in one clause
+    "unclear_or",            # an "or" list no rule can express ("drop A or B", "Fri or Mon off"); rule parser only
 ]
+# reasons only the rule parser gives; the LLM's reply format leaves them out (see parsing/llm.py)
+RULES_ONLY_REASONS = ("unclear_or",)
 
 
 class _Strict(BaseModel):

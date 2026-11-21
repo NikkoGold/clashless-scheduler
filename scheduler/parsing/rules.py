@@ -493,7 +493,7 @@ def _match_rules(words, days: _Days | None, ranges, times, strength) -> list[Con
     if days is not None:
         if day_list and re.fullmatch(r"off|NEG|free|off free|NEG off", core):
             if days.uses_or and not core.startswith("NEG"):
-                return None  # "Fridays or Mondays off" asks for one of them, which no rule says
+                raise _Unparsed("unclear_or")  # "Fridays or Mondays off" asks for one of them, which no rule says
             return [DayOff(day=d, strength=st) for d in day_list]
         return None
 
@@ -560,7 +560,7 @@ def _match_names(words, catalog: Catalog, names, strength, explicit_verb) -> lis
         raise _Unparsed("not_understood")
     or_list = "or" in rest
     if or_list and "and" in rest:
-        raise _Unparsed("not_understood")  # "ALG and DB or CS101": which grouping?
+        raise _Unparsed("unclear_or")  # "ALG and DB or CS101": which grouping?
 
     resolved = []
     for item in items:
@@ -575,7 +575,7 @@ def _match_names(words, catalog: Catalog, names, strength, explicit_verb) -> lis
         # that says what they mean, so they're left for the user to rephrase
         if mode in ("take", "prefer") and all(n.kind == "course" for n in resolved):
             return [TakeNOf(courses=[n.value for n in resolved], n=1, strength=_apply(strength))]
-        raise _Unparsed("not_understood")
+        raise _Unparsed("unclear_or")
     return [_rule_for(name, mode, strength) for name in resolved]
 
 

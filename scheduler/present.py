@@ -33,6 +33,8 @@ def unparsed_message(f: UnparsedFragment) -> str:
             return f"{text}: an impossible time or range."
         case "conflicting_strength":
             return f'{text}: mixes must-have and nice-to-have wording (like "must" and "ideally"); keep one.'
+        case "unclear_or":
+            return f'{text}: "or" is unclear here (one of them, or all?). Use "and" for all of them, or name one.'
     return f'{text}: not understood. Try rephrasing, e.g. "no classes before 10".'
 
 

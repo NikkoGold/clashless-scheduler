@@ -627,16 +627,16 @@
   rules: {constraints: [{kind: take_n_of, courses: [ALG, DB], n: 1, strength: soft}], unparsed: []}
   tags: [names, or]
 - text: "take ALG and DB or CS101"  # and/or mixed: which grouping?
-  rules: {constraints: [], unparsed: [{text: "take ALG and DB or CS101", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "take ALG and DB or CS101", reason: unclear_or}]}
   tags: [names, or]
 - text: "prefer Cohen or Adler"  # "either is fine": no rule kind says that yet
-  rules: {constraints: [], unparsed: [{text: "prefer Cohen or Adler", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "prefer Cohen or Adler", reason: unclear_or}]}
   tags: [names, or]
 - text: "prefer ALG or Cohen"
-  rules: {constraints: [], unparsed: [{text: "prefer ALG or Cohen", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "prefer ALG or Cohen", reason: unclear_or}]}
   tags: [names, or]
 - text: "drop ALG or DB"  # drop one of them, or both?
-  rules: {constraints: [], unparsed: [{text: "drop ALG or DB", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "drop ALG or DB", reason: unclear_or}]}
   tags: [names, or]
 - text: "don't take ALG or DB"  # under a negation, or means neither
   rules: {constraints: [{kind: exclude_course, course: ALG}, {kind: exclude_course, course: DB}], unparsed: []}
@@ -648,13 +648,13 @@
   rules: {constraints: [{kind: avoid_instructor, name: Cohen}, {kind: avoid_instructor, name: Adler}], unparsed: []}
   tags: [names, or]
 - text: "fridays or mondays off"  # one of them off: no rule kind says that
-  rules: {constraints: [], unparsed: [{text: "fridays or mondays off", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "fridays or mondays off", reason: unclear_or}]}
   tags: [days, or]
 - text: "mondays or fridays free"
-  rules: {constraints: [], unparsed: [{text: "mondays or fridays free", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "mondays or fridays free", reason: unclear_or}]}
   tags: [days, or]
 - text: "mon, wed or fri off"
-  rules: {constraints: [], unparsed: [{text: "mon, wed or fri off", reason: not_understood}]}
+  rules: {constraints: [], unparsed: [{text: "mon, wed or fri off", reason: unclear_or}]}
   tags: [days, or]
 - text: "no classes on mon or wed"  # under a negation: neither day
   rules: {constraints: [{kind: day_off, day: Mon}, {kind: day_off, day: Wed}], unparsed: []}

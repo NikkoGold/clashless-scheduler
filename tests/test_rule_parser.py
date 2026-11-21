@@ -511,7 +511,7 @@ def _or_cases():
 def test_or_means_one_of_for_take_each_of_under_a_negation_and_is_unparsed_otherwise(cat_name, text, expected):
     result = RuleParser().parse(text, CATALOGS[cat_name])
     if expected is None:
-        assert result.constraints == [] and [f.reason for f in result.unparsed] == ["not_understood"]
+        assert result.constraints == [] and [f.reason for f in result.unparsed] == ["unclear_or"]
         return
     assert result.unparsed == []
     got = sorted((c.kind, tuple(c.courses) if c.kind == "take_n_of" else getattr(c, "name", None) or c.course, c.strength)
