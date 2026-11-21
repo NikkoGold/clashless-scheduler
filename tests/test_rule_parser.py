@@ -480,3 +480,40 @@ def test_and_after_a_course_name_still_splits_off_a_rule(cat_name, text, course_
     assert result.unparsed == []
     assert sorted((c.kind, getattr(c, "course", None)) for c in result.constraints) == sorted(
         [("must_take", course_id), (kind, None)])
+
+
+# ---- "or" lists with every verb, on every catalog (generated) ----
+
+OR_FORMS = ["{} or {}", "{}, {} or {}"]
+
+
+def _or_cases():
+    for cat_name, by_type in NAMES.items():
+        for verb, (course_kind, instructor_kind, strength) in VERBS.items():
+            for form in OR_FORMS:
+                for name_type in ("course", "instructor"):
+                    kind = course_kind if name_type == "course" else instructor_kind
+                    if kind is None:
+                        continue
+                    picked = by_type[name_type][: form.count("{}")]
+                    text = f"{verb} " + form.format(*(typed for typed, _ in picked))
+                    values = [value for _, value in picked]
+                    if kind == "must_take":  # take / prefer a course: one of them
+                        expected = [("take_n_of", tuple(values), strength)]
+                    elif verb in ("drop", "skip") or kind == "prefer_instructor":  # unclear, or no rule for it yet
+                        expected = None
+                    else:  # under a negation: each of them
+                        expected = sorted((kind, v, strength) for v in values)
+                    yield pytest.param(cat_name, text, expected, id=f"{cat_name}: {text}")
+
+
+@pytest.mark.parametrize("cat_name, text, expected", list(_or_cases()))
+def test_or_means_one_of_for_take_each_of_under_a_negation_and_is_unparsed_otherwise(cat_name, text, expected):
+    result = RuleParser().parse(text, CATALOGS[cat_name])
+    if expected is None:
+        assert result.constraints == [] and [f.reason for f in result.unparsed] == ["not_understood"]
+        return
+    assert result.unparsed == []
+    got = sorted((c.kind, tuple(c.courses) if c.kind == "take_n_of" else getattr(c, "name", None) or c.course, c.strength)
+                 for c in result.constraints)
+    assert got == expected and all(c.n == 1 for c in result.constraints if c.kind == "take_n_of")

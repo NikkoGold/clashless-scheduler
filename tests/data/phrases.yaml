@@ -612,3 +612,53 @@
   catalog: sample
   rules: {constraints: [{kind: must_take, course: OLD}, {kind: no_class_before, time: "10:00"}], unparsed: []}
   tags: [names, splitting]
+
+# ---- "or" lists: one of them where that's a rule we have, each of them under a negation, unparsed otherwise ----
+- text: "take Algorithms or Databases"  # one of the two, not both
+  rules: {constraints: [{kind: take_n_of, courses: [ALG, DB], n: 1}], unparsed: []}
+  tags: [names, or]
+- text: "take ALG, DB or CS101"
+  rules: {constraints: [{kind: take_n_of, courses: [ALG, DB, CS101], n: 1}], unparsed: []}
+  tags: [names, or]
+- text: "ideally take ALG or DB"
+  rules: {constraints: [{kind: take_n_of, courses: [ALG, DB], n: 1, strength: soft}], unparsed: []}
+  tags: [names, or, strength]
+- text: "prefer ALG or DB"  # prefer on a course is a soft take
+  rules: {constraints: [{kind: take_n_of, courses: [ALG, DB], n: 1, strength: soft}], unparsed: []}
+  tags: [names, or]
+- text: "take ALG and DB or CS101"  # and/or mixed: which grouping?
+  rules: {constraints: [], unparsed: [{text: "take ALG and DB or CS101", reason: not_understood}]}
+  tags: [names, or]
+- text: "prefer Cohen or Adler"  # "either is fine": no rule kind says that yet
+  rules: {constraints: [], unparsed: [{text: "prefer Cohen or Adler", reason: not_understood}]}
+  tags: [names, or]
+- text: "prefer ALG or Cohen"
+  rules: {constraints: [], unparsed: [{text: "prefer ALG or Cohen", reason: not_understood}]}
+  tags: [names, or]
+- text: "drop ALG or DB"  # drop one of them, or both?
+  rules: {constraints: [], unparsed: [{text: "drop ALG or DB", reason: not_understood}]}
+  tags: [names, or]
+- text: "don't take ALG or DB"  # under a negation, or means neither
+  rules: {constraints: [{kind: exclude_course, course: ALG}, {kind: exclude_course, course: DB}], unparsed: []}
+  tags: [names, or]
+- text: "avoid Cohen or Adler"
+  rules: {constraints: [{kind: avoid_instructor, name: Cohen, strength: soft}, {kind: avoid_instructor, name: Adler, strength: soft}], unparsed: []}
+  tags: [names, or]
+- text: "never Cohen or Adler"
+  rules: {constraints: [{kind: avoid_instructor, name: Cohen}, {kind: avoid_instructor, name: Adler}], unparsed: []}
+  tags: [names, or]
+- text: "fridays or mondays off"  # one of them off: no rule kind says that
+  rules: {constraints: [], unparsed: [{text: "fridays or mondays off", reason: not_understood}]}
+  tags: [days, or]
+- text: "mondays or fridays free"
+  rules: {constraints: [], unparsed: [{text: "mondays or fridays free", reason: not_understood}]}
+  tags: [days, or]
+- text: "mon, wed or fri off"
+  rules: {constraints: [], unparsed: [{text: "mon, wed or fri off", reason: not_understood}]}
+  tags: [days, or]
+- text: "no classes on mon or wed"  # under a negation: neither day
+  rules: {constraints: [{kind: day_off, day: Mon}, {kind: day_off, day: Wed}], unparsed: []}
+  tags: [days, or]
+- text: "no classes before 10 on mon or wed"
+  rules: {constraints: [{kind: no_class_before, time: "10:00", days: [Mon, Wed]}], unparsed: []}
+  tags: [time, days, or]

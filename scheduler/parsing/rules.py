@@ -32,6 +32,7 @@ from scheduler.models import (
     NoClassBefore,
     PreferGroup,
     PreferInstructor,
+    TakeNOf,
     format_time,
 )
 from scheduler.parsing.base import ParseResult, Span, UnparsedFragment
@@ -75,7 +76,8 @@ FILLER = {"please", "thanks", "thank", "you", "i", "am", "would", "like", "to", 
           "any", "have", "having", "be", "is", "are", "also", "really", "keep", "classes", "class",
           "lectures", "lessons", "schedule", "course", "courses", "for", "of", "in", "want", "so", "just",
           "per", "it", "that", "we", "ok", "okay", "hi", "hello"}
-LIST_WORDS = {"and", "or"}
+# COMMA is a comma inside a clause, kept apart from "and" so "A, B or C" reads as an "or" list
+LIST_WORDS = {"and", "or", "COMMA"}
 # small words inside course names that never start or end a name typed in part
 LINKING_WORDS = {"a", "an", "the", "of", "to", "for", "in", "on", "at", "and", "or", "with", "by", "from"}
 EXPLICIT_NAME_VERBS = {"prefer", "avoid", "never", "take", "include", "add", "drop", "skip", "exclude", "remove"}
@@ -310,7 +312,7 @@ def _normalise_clause(clause: str) -> str:
         s = re.sub(rf"\b{word}\b", str(n), s)
     s = re.sub(r"\b(?:at most|at the most|no more than|not more than|maximum|max|up to|only)\b", " MAX ", s)
     s = re.sub(r"\b(?:at least|at the least|no less than|not less than|no fewer than|minimum)\b", " MIN ", s)
-    s = s.replace(",", " and ")  # a comma left inside a clause separates list items ("Cohen, Adler")
+    s = s.replace(",", " COMMA ")  # a comma left inside a clause separates list items ("Cohen, Adler")
     s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)  # keep "4.30", drop sentence dots
     s = re.sub(r"[^\w:.\- ]", " ", s)
     s = re.sub(r"(?<![\d\s])-|-(?![\d\s])", " ", s)  # keep "12-13", drop other hyphens
@@ -330,6 +332,7 @@ def _strength(s: str) -> str | None:
 class _Days:
     explicit: list[str] | None  # specific days, or None for "every day"
     is_all: bool = False
+    uses_or: bool = False  # "Mon or Fri": one of them, unless the rule is a negation ("no classes on Mon or Fri")
 
 
 def _take_days(s: str, catalog: Catalog) -> tuple[str, _Days | None]:
@@ -376,6 +379,7 @@ def _take_days(s: str, catalog: Catalog) -> tuple[str, _Days | None]:
         days = _Days(sorted(picked, key=CALENDAR_ORDER.index))
     if days.explicit == []:
         raise _Unparsed("not_understood")  # e.g. "weekdays" in a week that is only Fri and Sat
+    days.uses_or = "or" in words[first:last + 1]
     rest = words[:lead] + ["DAYS"] + words[last + 1:]
     return " ".join(rest), days
 
@@ -488,6 +492,8 @@ def _match_rules(words, days: _Days | None, ranges, times, strength) -> list[Con
 
     if days is not None:
         if day_list and re.fullmatch(r"off|NEG|free|off free|NEG off", core):
+            if days.uses_or and not core.startswith("NEG"):
+                return None  # "Fridays or Mondays off" asks for one of them, which no rule says
             return [DayOff(day=d, strength=st) for d in day_list]
         return None
 
@@ -522,6 +528,7 @@ def _match_names(words, catalog: Catalog, names, strength, explicit_verb) -> lis
         if words and words[0] == "NEG":
             positive, words = False, words[1:]
     head = words[0] if words else ""
+    negated = head == "NEG"  # "don't take", "no", "never": an "or" list means none of them
     if head == "NEG" and len(words) > 1 and words[1] == "take":
         mode, rest = "drop", words[2:]
     elif head in ("take", "include", "add"):
@@ -551,17 +558,25 @@ def _match_names(words, catalog: Catalog, names, strength, explicit_verb) -> lis
             current.append(w)
     if not items:
         raise _Unparsed("not_understood")
+    or_list = "or" in rest
+    if or_list and "and" in rest:
+        raise _Unparsed("not_understood")  # "ALG and DB or CS101": which grouping?
 
-    found = []
+    resolved = []
     for item in items:
         try:
-            name = _resolve(item, names)
+            resolved.append(_resolve(item, names))
         except _Unparsed as e:
             if e.reason == "unknown_name" and not explicit_verb:
                 raise _Unparsed("not_understood") from None
             raise
-        found.append(_rule_for(name, mode, strength))
-    return found
+    if or_list and not (negated or mode == "avoid"):
+        # "take ALG or DB" is one of them; other "or" lists ("drop ALG or DB", "prefer Cohen or Adler") have no rule
+        # that says what they mean, so they're left for the user to rephrase
+        if mode in ("take", "prefer") and all(n.kind == "course" for n in resolved):
+            return [TakeNOf(courses=[n.value for n in resolved], n=1, strength=_apply(strength))]
+        raise _Unparsed("not_understood")
+    return [_rule_for(name, mode, strength) for name in resolved]
 
 
 def _rule_for(name: _Name, mode: str, strength) -> Constraint:
