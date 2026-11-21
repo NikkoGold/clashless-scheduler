@@ -1,4 +1,5 @@
 """RuleParser: the phrase table in tests/data/phrases.yaml, plus behaviours a table can't express."""
+import difflib
 import json
 from pathlib import Path
 
@@ -22,7 +23,7 @@ CASE_KEYS = {"text", "catalog", "rules", "llm", "tags"}
 RULES_KEYS = {"constraints", "unparsed"}
 UNPARSED_KEYS = {"text", "reason", "candidates"}
 # a case's optional `catalog:` names the catalog it's parsed against (default: phrase)
-CATALOG_FILES = {"phrase": DATA / "phrase_catalog.json", "sample": SAMPLE}
+CATALOG_FILES = {"phrase": DATA / "phrase_catalog.json", "sample": SAMPLE, "fullname": DATA / "fullname_catalog.json"}
 
 
 def load_phrase_cases(path: Path) -> list[dict]:
@@ -112,6 +113,8 @@ NAMES = {
                "instructor": [("Cohen", "Cohen"), ("Adler", "Adler"), ("Levi", "Levi")]},
     "sample": {"course": [("XBI", "XBI"), ("Ground Vehicle Maintenance", "GVM"), ("NAV2", "NAV2")],
                "instructor": [("Brenner", "Brenner"), ("Dagan", "Dagan"), ("Erez", "Erez")]},
+    "fullname": {"course": [("Statistics", "STAT"), ("PHYS", "PHYS"), ("Chemistry", "CHEM")],
+                 "instructor": [("Levi", "Dana Levi"), ("Avi", "Avi Cohen"), ("Ben-David", "Ruth Ben-David")]},
 }
 
 
@@ -384,6 +387,9 @@ def _suggested_or_read(text: str, cat, course_id: str) -> bool:
 @pytest.mark.parametrize("pad", [("k", "lan"), ("", "zqw"), ("wq", "")])
 def test_a_longer_word_containing_an_id_is_not_suggested_that_id(cat_name, course_id, pad):
     word = pad[0] + course_id.lower() + pad[1]
+    name = next(c.name for c in CATALOGS[cat_name].courses if c.id == course_id).lower()
+    if difflib.SequenceMatcher(None, word, name).ratio() >= 0.6:
+        pytest.skip(f"{word!r} looks like the course name {name!r} itself, which may be suggested")  # "wqphys", "physics"
     assert not _suggested_or_read(f"take {word}", CATALOGS[cat_name], course_id)
 
 
@@ -398,3 +404,25 @@ def test_a_one_letter_typo_of_an_id_is_still_suggested(cat_name, course_id):
 def test_an_id_typed_as_a_word_among_others_is_still_suggested(cat_name, course_id):
     # "prefer CS101 lab" (no group number): the user did name CS101
     assert _suggested_or_read(f"take {course_id} zzz", CATALOGS[cat_name], course_id)
+
+
+# ---- instructors with several words in their name (generated over the full-name catalog) ----
+
+def _name_word_cases():
+    cat = CATALOGS["fullname"]
+    instructors = sorted({g.instructor for c in cat.courses for gs in c.components.values() for g in gs if g.instructor})
+    words = sorted({w for name in instructors for w in name.replace("-", " ").split()})
+    for word in words:
+        having = [name for name in instructors if word.lower() in name.replace("-", " ").lower().split()]
+        for verb in ("prefer", "avoid", "never", "ideally avoid"):
+            yield pytest.param(f"{verb} {word}", having, id=f"{verb} {word}")
+
+
+@pytest.mark.parametrize("text, having", list(_name_word_cases()))
+def test_any_word_of_an_instructors_name_picks_them_or_is_ambiguous(text, having):
+    result = RuleParser().parse(text, CATALOGS["fullname"])
+    if len(having) == 1:
+        assert result.unparsed == [] and [c.name for c in result.constraints] == having
+    else:
+        assert result.constraints == []
+        assert [(f.reason, f.candidates) for f in result.unparsed] == [("ambiguous_name", having)]

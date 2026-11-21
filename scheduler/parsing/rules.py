@@ -178,8 +178,9 @@ def _resolve(item: str, names: list[_Name]) -> _Name:
     exact = one([n for n in names if n.key == query])
     if exact:
         return exact
-    # every word of the query appears in one course name: "algorithms", "intro", "ground vehicle"
-    contained = one([n for n in names if n.kind == "course" and set(words) <= set(n.key.split())])
+    # every word of the query appears in one course or instructor name: "algorithms", "ground vehicle", "Levi" for
+    # Dana Levi; a word several names share ("Cohen" for Dana and Avi Cohen) is ambiguous
+    contained = one([n for n in names if set(words) <= set(n.key.split())])
     if contained:
         return contained
 
@@ -211,6 +212,10 @@ def _split(text: str, names: list[_Name]) -> list[str]:
     name_starts = {k.split()[0] for n in names for k in (n.key, n.raw) if k} | TITLES
     name_ends = {k.split()[-1] for n in names for k in (n.key, n.raw) if k}
     name_ends |= {roman for roman, digit in ROMAN.items() if digit in name_ends}
+    # any word of an instructor's name may be typed alone ("Avi and Levi" for Avi Cohen and Dana Levi)
+    instructor_words = {w for n in names if n.kind == "instructor" for k in (n.key, n.raw) for w in k.split()}
+    name_starts |= instructor_words
+    name_ends |= instructor_words
     cuts, start = [], 0
     for m in SPLIT_AT.finditer(text):
         if _keeps_together(text, m, name_starts, name_ends):

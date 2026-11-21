@@ -547,3 +547,50 @@
   rules: {constraints: [], unparsed: [{text: "Mondays and Wednesdays I work until 1", reason: not_understood}, {text: "so nothing before then those days", reason: not_understood}]}
   llm: {constraints: [{kind: no_class_before, time: "13:00", days: [Mon, Wed]}]}
   tags: [time, days, llm]
+
+# ---- against tests/data/fullname_catalog.json: instructors with first and last names ----
+# Any of a name's words picks the instructor, like a course name's words; a word several instructors share is ambiguous.
+- text: "prefer Dana Cohen"
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Dana Cohen, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Levi"
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Dana Levi, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Prof. Levi"
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Dana Levi, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "avoid Avi"
+  catalog: fullname
+  rules: {constraints: [{kind: avoid_instructor, name: Avi Cohen, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Ben-David"
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Ruth Ben-David, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Gal"  # a one-word name in the same catalog
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Gal, strength: soft}], unparsed: []}
+  tags: [names]
+- text: "prefer Cohen"
+  catalog: fullname
+  rules: {constraints: [], unparsed: [{text: "prefer Cohen", reason: ambiguous_name, candidates: [Avi Cohen, Dana Cohen]}]}
+  tags: [names]
+- text: "prefer Dana"
+  catalog: fullname
+  rules: {constraints: [], unparsed: [{text: "prefer Dana", reason: ambiguous_name, candidates: [Dana Cohen, Dana Levi]}]}
+  tags: [names]
+- text: "never Cohen"
+  catalog: fullname
+  rules: {constraints: [], unparsed: [{text: "never Cohen", reason: ambiguous_name, candidates: [Avi Cohen, Dana Cohen]}]}
+  tags: [names]
+- text: "prefer Levi and fridays off"  # "and" after a name word still splits off a clause that isn't a name
+  catalog: fullname
+  rules: {constraints: [{kind: prefer_instructor, name: Dana Levi, strength: soft}, {kind: day_off, day: Fri}], unparsed: []}
+  tags: [names, splitting]
+- text: "avoid Avi and Ben-David"
+  catalog: fullname
+  rules: {constraints: [{kind: avoid_instructor, name: Avi Cohen, strength: soft}, {kind: avoid_instructor, name: Ruth Ben-David, strength: soft}], unparsed: []}
+  tags: [names, splitting]

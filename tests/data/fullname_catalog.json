@@ -1,0 +1,27 @@
+{
+  "term": "full names",
+  "courses": [
+    {
+      "id": "STAT", "name": "Statistics", "credits": 3,
+      "components": {
+        "lecture": [
+          {"group": "1", "instructor": "Dana Cohen", "sessions": [{"day": "Sun", "start": "10:00", "end": "12:00"}]},
+          {"group": "2", "instructor": "Avi Cohen", "sessions": [{"day": "Mon", "start": "10:00", "end": "12:00"}]}
+        ]
+      }
+    },
+    {
+      "id": "PHYS", "name": "Physics", "credits": 4,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Dana Levi", "sessions": [{"day": "Tue", "start": "10:00", "end": "12:00"}]}]
+      }
+    },
+    {
+      "id": "CHEM", "name": "Chemistry", "credits": 4,
+      "components": {
+        "lecture": [{"group": "1", "instructor": "Ruth Ben-David", "sessions": [{"day": "Wed", "start": "10:00", "end": "12:00"}]}],
+        "lab": [{"group": "11", "instructor": "Gal", "sessions": [{"day": "Thu", "start": "14:00", "end": "16:00"}]}]
+      }
+    }
+  ]
+}
