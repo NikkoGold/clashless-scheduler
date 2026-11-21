@@ -383,6 +383,28 @@
   tags: [names, splitting]
 
 # ---- against the sample catalog (data/sample_courses.json): similar names, "II" names, real groups ----
+# suggestions for an unknown name: a course ID is only suggested when it was typed as a word ("prefer CS101 lab") or
+# for a word about as long as the ID (a typo of it), not for a longer word holding its letters ("Kaplan" isn't APA)
+- text: "prefer Kaplan"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "prefer Kaplan", reason: unknown_name}]}
+  tags: [names]
+- text: "prefer Shapiro"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "prefer Shapiro", reason: unknown_name}]}
+  tags: [names]
+- text: "prefer Hepner"  # Brenner is a look-alike name; HEP is just three of its letters
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "prefer Hepner", reason: unknown_name, candidates: [Brenner]}]}
+  tags: [names]
+- text: "take GVQ"  # a typo of an ID still gets suggestions
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "take GVQ", reason: unknown_name, candidates: [GVO, GVM]}]}
+  tags: [names]
+- text: "take XBl"
+  catalog: sample
+  rules: {constraints: [], unparsed: [{text: "take XBl", reason: unknown_name, candidates: [XBI]}]}
+  tags: [names]
 - text: "take XBI and APA"
   catalog: sample
   rules: {constraints: [{kind: must_take, course: XBI}, {kind: must_take, course: APA}], unparsed: []}

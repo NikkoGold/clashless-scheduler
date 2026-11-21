@@ -364,3 +364,37 @@ def test_adding_fridays_off_to_the_manual_check_phrase_adds_a_day_off():
     assert result.unparsed == []
     assert DayOff(day="Fri") in result.constraints
     assert len(result.constraints) == 4
+
+
+# ---- suggestions for unknown names: a course ID only for a word about as long as it (generated, both catalogs) ----
+
+def _id_cases():
+    for cat_name, cat in CATALOGS.items():
+        for c in cat.courses:
+            yield cat_name, c.id
+
+
+def _suggested_or_read(text: str, cat, course_id: str) -> bool:
+    result = RuleParser().parse(text, cat)
+    return (any(getattr(c, "course", None) == course_id for c in result.constraints)
+            or any(course_id in f.candidates for f in result.unparsed))
+
+
+@pytest.mark.parametrize("cat_name, course_id", list(_id_cases()))
+@pytest.mark.parametrize("pad", [("k", "lan"), ("", "zqw"), ("wq", "")])
+def test_a_longer_word_containing_an_id_is_not_suggested_that_id(cat_name, course_id, pad):
+    word = pad[0] + course_id.lower() + pad[1]
+    assert not _suggested_or_read(f"take {word}", CATALOGS[cat_name], course_id)
+
+
+# a two-letter ID with one letter wrong ("Dq" for DB) is half a different word, not a typo
+@pytest.mark.parametrize("cat_name, course_id", [(n, i) for n, i in _id_cases() if len(i) >= 3])
+def test_a_one_letter_typo_of_an_id_is_still_suggested(cat_name, course_id):
+    typo = course_id[:-1] + ("q" if course_id[-1].lower() != "q" else "x")
+    assert _suggested_or_read(f"take {typo}", CATALOGS[cat_name], course_id)
+
+
+@pytest.mark.parametrize("cat_name, course_id", [(n, i) for n, i in _id_cases() if len(i) >= 3])
+def test_an_id_typed_as_a_word_among_others_is_still_suggested(cat_name, course_id):
+    # "prefer CS101 lab" (no group number): the user did name CS101
+    assert _suggested_or_read(f"take {course_id} zzz", CATALOGS[cat_name], course_id)

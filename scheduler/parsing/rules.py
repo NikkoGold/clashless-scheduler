@@ -102,6 +102,7 @@ class _Name:
     value: str  # course id or instructor name
     key: str  # what is matched: normalised, with Roman numerals as digits
     raw: str  # normalised as written
+    is_id: bool = False  # a course ID rather than a course name or an instructor
 
 
 class RuleParser:
@@ -142,13 +143,13 @@ def _numerals(words: list[str], with_i: bool) -> list[str]:
 
 
 def _names(catalog: Catalog) -> list[_Name]:
-    def name(kind, value, text):
+    def name(kind, value, text, is_id=False):
         raw = _normalise(text)
-        return _Name(kind, value, " ".join(_numerals(raw.split(), with_i=True)), raw)
+        return _Name(kind, value, " ".join(_numerals(raw.split(), with_i=True)), raw, is_id)
 
     found = []
     for c in catalog.courses:
-        found.append(name("course", c.id, c.id))
+        found.append(name("course", c.id, c.id, is_id=True))
         found.append(name("course", c.id, c.name))
     instructors = {g.instructor for c in catalog.courses for gs in c.components.values() for g in gs}
     found += [name("instructor", i, i) for i in sorted(instructors - {None})]
@@ -183,9 +184,14 @@ def _resolve(item: str, names: list[_Name]) -> _Name:
         return contained
 
     ratios: dict[tuple, float] = {}
+    suggestions: dict[tuple, float] = {}
     for n in names:
         r = difflib.SequenceMatcher(None, query, n.key).ratio()
         ratios[(n.kind, n.value)] = max(r, ratios.get((n.kind, n.value), 0))
+        # a short ID scores well against any longer word holding its letters ("kaplan" vs "apa": 0.67), so an ID
+        # is only suggested when the user typed it as a word ("cs101 lab") or something about as long (a typo of it)
+        if not n.is_id or n.key in words or len(query) <= len(n.key) + 1:
+            suggestions[(n.kind, n.value)] = max(r, suggestions.get((n.kind, n.value), 0))
     ranked = sorted(ratios.items(), key=lambda kv: -kv[1])
     best = ranked[0] if ranked else None
     runner_up = ranked[1][1] if len(ranked) > 1 else 0
@@ -194,7 +200,7 @@ def _resolve(item: str, names: list[_Name]) -> _Name:
             return next(n for n in names if (n.kind, n.value) == best[0])
         close = [kv[0][1] for kv in ranked if best[1] - kv[1] < 0.1]
         raise _Unparsed("ambiguous_name", sorted(close))
-    raise _Unparsed("unknown_name", [kv[0][1] for kv in ranked if kv[1] >= 0.6])
+    raise _Unparsed("unknown_name", [kv[0][1] for kv in sorted(suggestions.items(), key=lambda kv: -kv[1]) if kv[1] >= 0.6])
 
 
 # ---- splitting into clauses ----
