@@ -10,6 +10,7 @@ CORS headers (so other sites can't read responses).
 """
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,8 +26,9 @@ from scheduler.config import DEFAULT_MODELS, KEY_VARS, Config, load_config, writ
 from scheduler.constraints import describe
 from scheduler.models import Catalog, Constraint, parse_constraint
 from scheduler.parsing.providers import Provider, make_provider
-from scheduler.parsing.router import Router
-from scheduler.present import PROVIDER_CHOICES, parser_label, rule, schedule_view, unparsed_message
+from scheduler.parsing.router import OFFLINE_NOTE, Router
+from scheduler.present import (OFFLINE_CHOSEN_NOTE, PROVIDER_CHOICES, WEB_SETUP_HINT, for_web, group_times, parser_label, rule,
+                               schedule_view, unparsed_message)
 from scheduler.selection import SelectionError, select_courses
 from scheduler.solver import solve
 
@@ -64,6 +66,7 @@ class CatalogBody(BaseModel):
 class ParseBody(BaseModel):
     catalog: Any
     text: str = ""
+    offline: bool = False  # the page's LLM | Offline switch: rules only for this request, saves nothing
 
 
 class RulesBody(BaseModel):
@@ -125,6 +128,13 @@ def _setup_status(config: Config) -> dict:
     }
 
 
+def _offline_note(note: str | None, chose_offline: bool) -> str | None:
+    """The router's note for the page; with an LLM set up but Offline chosen, point at the switch instead of setup."""
+    if note and chose_offline:
+        note = note.replace(OFFLINE_NOTE, OFFLINE_CHOSEN_NOTE)
+    return for_web(note)
+
+
 # ---- the app ----
 
 def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -> FastAPI:
@@ -174,7 +184,9 @@ def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -
             "courses": [{"id": c.id, "name": c.name, "credits": c.credits, "required": c.required,
                          "components": list(c.components),
                          "instructors": list(dict.fromkeys(g.instructor for gs in c.components.values() for g in gs
-                                                           if g.instructor))}
+                                                           if g.instructor)),
+                         "groups": [{"component": name, "group": g.group, "instructor": g.instructor,
+                                     "times": group_times(g)} for name, gs in c.components.items() for g in gs]}
                         for c in cat.courses],
         }
 
@@ -195,6 +207,9 @@ def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -
     def parse(body: ParseBody):
         cat = _catalog(body.catalog)
         config = load_config()
+        chose_offline = body.offline and config.provider != "none" and not config.needs_setup
+        if body.offline:
+            config = replace(config, provider="none", needs_setup=False)
         text = body.text.strip()
         routed = Router(config, provider_factory=provider_factory).parse(text, cat) if text else None
         result = routed.result if routed else None
@@ -210,10 +225,12 @@ def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -
             spans.append({"text": span.text, "rules": indexes})
         return {
             "path": routed.path if routed else None,
-            "path_label": parser_label(routed, config),
-            "note": routed.note if routed else config.problem,
+            "path_label": parser_label(routed, config, body.offline, setup_hint=WEB_SETUP_HINT),
+            "offline": body.offline,
+            "note": _offline_note(routed.note if routed else config.problem, chose_offline),
             "rules": _rule_items(constraints),
-            "unparsed": [{"text": f.text, "reason": f.reason, "candidates": f.candidates, "message": unparsed_message(f)}
+            "unparsed": [{"text": f.text, "reason": f.reason, "candidates": f.candidates,
+                          "message": for_web(unparsed_message(f))}
                          for f in (result.unparsed if result else [])],
             "spans": spans,
         }

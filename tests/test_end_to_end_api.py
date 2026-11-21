@@ -110,6 +110,41 @@ def test_clear_text_with_an_llm_set_up_makes_no_call_and_matches_the_rules_alone
     assert solve(c, SAMPLE, parsed["rules"])["result"] == solve(api(), SAMPLE, parse(api(), SAMPLE, text)["rules"])["result"]
 
 
+def test_the_offline_switch_skips_the_llm_even_when_one_is_set_up(llm_set_up):
+    fake = FakeProvider([])
+    c = api(provider=fake)
+    parsed = parse(c, SAMPLE, VAGUE, offline=True)
+    assert fake.calls == [] and parsed["path"] == "rules (offline)" and parsed["offline"] is True
+    assert [u["text"] for u in parsed["unparsed"]] == ["I'm not a morning person"]
+    assert "add an LLM" not in parsed["path_label"]  # one is set up; the user chose offline for now
+    assert solve(c, SAMPLE, parsed["rules"])["schedules"]
+
+
+def test_the_offline_switch_note_points_back_to_the_switch_not_to_setup(llm_set_up):
+    note = parse(api(provider=FakeProvider([])), SAMPLE, VAGUE, offline=True)["note"]
+    assert "your choice" in note and "Switch the parser back to LLM" in note and "Set up an LLM" not in note
+
+
+def test_offline_without_an_llm_still_suggests_setup(fresh_settings, c):
+    fresh_settings.save("LLM_PROVIDER=none\n")
+    note = parse(c, SAMPLE, VAGUE, offline=True)["note"]
+    assert "Set up an LLM" in note and "your choice" not in note
+
+
+def test_the_offline_switch_saves_nothing(llm_set_up, fresh_settings):
+    before = fresh_settings.saved()
+    parse(api(provider=FakeProvider([])), SAMPLE, VAGUE, offline=True)
+    assert fresh_settings.saved() == before
+    assert ok(api().get("/api/setup"))["provider"] == "gemini"
+
+
+def test_switching_back_to_the_llm_uses_it_again(llm_set_up):
+    fake = FakeProvider([reply({"kind": "no_class_after", "time": "18:00"})])
+    c = api(provider=fake)
+    parse(c, SAMPLE, VAGUE, offline=True)
+    assert parse(c, SAMPLE, VAGUE)["path"] == "llm" and len(fake.calls) == 1
+
+
 def test_a_course_the_llm_invents_is_reported_and_the_rest_still_solves(llm_set_up):
     fake = FakeProvider([reply({"kind": "no_class_after", "time": "18:00"}, {"kind": "must_take", "course": "MORNING101"})])
     c = api(provider=fake)

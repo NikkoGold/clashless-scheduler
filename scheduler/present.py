@@ -1,7 +1,7 @@
 """Plain-language text about parses and results, shared by the CLI and the web API so both say the same thing."""
 from scheduler.config import Config
 from scheduler.constraints import describe
-from scheduler.models import Catalog, Constraint, Schedule, format_time
+from scheduler.models import Catalog, Constraint, Group, Schedule, format_time
 from scheduler.parsing.base import UnparsedFragment
 
 SETUP_COMMAND = "python -m scheduler setup"
@@ -63,7 +63,7 @@ def differences(best: Schedule, other: Schedule) -> list[str]:
     return found
 
 
-def parser_label(routed, config: Config, offline_flag: bool = False) -> str:
+def parser_label(routed, config: Config, offline_flag: bool = False, setup_hint: str = SETUP_HINT) -> str:
     """Which parser read the text, e.g. "llm (gemini-3.5-flash-lite)" or "rules (offline): run ... to add an LLM"."""
     if routed is None:
         return "none (no preferences given)"
@@ -73,8 +73,29 @@ def parser_label(routed, config: Config, offline_flag: bool = False) -> str:
     if path == "cache":
         return f"cache (an earlier reply from {config.model})"
     if path == "rules (offline)" and not offline_flag and not config.needs_setup:
-        return f"{path}: {SETUP_HINT}"
+        return f"{path}: {setup_hint}"
     return path
+
+
+# Offline chosen with the page's switch while an LLM is set up: point back at the switch, not at setup.
+OFFLINE_CHOSEN_NOTE = ("Offline (your choice): only simple, direct phrasing is understood. "
+                       "Switch the parser back to LLM to have free-form text read as well.")
+
+# The page has a Setup button instead of the setup command.
+WEB_SETUP_HINT = "use Setup (top of the page) to add an LLM"
+
+
+def for_web(text: str | None) -> str | None:
+    """CLI advice reworded for the page: point at the Setup button instead of the setup command."""
+    if text is None:
+        return None
+    return text.replace(SETUP_HINT, WEB_SETUP_HINT).replace(f"({SETUP_COMMAND})", "(Setup, top of the page)") \
+               .replace(SETUP_COMMAND, "Setup (top of the page)")
+
+
+def group_times(g: Group) -> str:
+    """"Mon 10:00-12:00, Wed 10:00-12:00"."""
+    return ", ".join(f"{s.day} {format_time(s.start)}-{format_time(s.end)}" for s in g.sessions)
 
 
 def _unique(items) -> list[str]:

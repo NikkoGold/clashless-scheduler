@@ -37,8 +37,8 @@ def ok(response) -> dict:
     return response.json()
 
 
-def parse(c, cat: dict, text: str) -> dict:
-    return ok(c.post("/api/parse", json={"catalog": cat, "text": text}))
+def parse(c, cat: dict, text: str, offline: bool = False) -> dict:
+    return ok(c.post("/api/parse", json={"catalog": cat, "text": text, "offline": offline}))
 
 
 def rules_of(parsed: dict) -> list[dict]:

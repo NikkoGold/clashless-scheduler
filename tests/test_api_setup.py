@@ -29,7 +29,7 @@ def test_continue_offline_is_saved_and_parsing_runs_offline(fresh_settings):
     assert "LLM_PROVIDER=none" in fresh_settings.saved()
     assert ok(c.get("/api/setup"))["needs_setup"] is False
     j = parse(c, sample(), "no classes before 10")
-    assert j["path"] == "rules (offline)" and "python -m scheduler setup" in j["path_label"]
+    assert j["path"] == "rules (offline)" and "use Setup" in j["path_label"] and "python -m" not in j["path_label"]
 
 
 def test_a_provider_and_key_are_saved_and_the_key_never_comes_back(fresh_settings):

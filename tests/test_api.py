@@ -90,8 +90,26 @@ def test_empty_text_gives_no_rules(c):
     assert j["rules"] == [] and j["unparsed"] == []
 
 
-def test_offline_unparsed_text_mentions_setup(c):
-    assert "python -m scheduler setup" in parse(c, sample(), "I'm not a morning person")["note"]
+def test_offline_unparsed_text_points_to_the_setup_button_not_the_command(c):
+    note = parse(c, sample(), "I'm not a morning person")["note"]
+    assert "Setup" in note and "python -m scheduler" not in note
+
+
+def test_no_parse_text_names_the_cli_setup_command(fresh_settings, c):
+    fresh_settings.save("LLM_PROVIDER=none\n")
+    j = parse(c, sample(), "I'm not a morning person, no classes before 10")
+    text = " ".join([j["path_label"], j["note"] or ""] + [u["message"] for u in j["unparsed"]])
+    assert "python -m scheduler" not in text and "Setup" in text
+
+
+def test_each_course_lists_its_groups_with_instructor_and_times(c):
+    j = ok(c.post("/api/catalog", json={"catalog": sample()}))
+    old = next(x for x in j["courses"] if x["id"] == "OLD")
+    assert {"component": "lecture", "group": "1", "instructor": "Cohen",
+            "times": "Mon 10:00-12:00, Wed 10:00-12:00"} in old["groups"]
+    nav = next(x for x in j["courses"] if x["id"] == "NAV2")
+    assert any(g["instructor"] is None for g in nav["groups"])
+    assert len(old["groups"]) == sum(len(gs) for gs in next(x for x in sample()["courses"] if x["id"] == "OLD")["components"].values())
 
 
 def test_an_unclear_or_carries_its_advice(c):
