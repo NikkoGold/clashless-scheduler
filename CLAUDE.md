@@ -20,8 +20,9 @@ courses.json ──► catalog (Pydantic) ────────────�
 - `scheduler/constraints.py`: the constraint kinds, and how each one is added to the CP-SAT model.
 - `scheduler/solver.py`: builds the model, top-K enumeration, explains unsolvable cases, score breakdown.
 - `scheduler/parsing/`: `base.py` (protocol), `rules.py`, `llm.py`, `providers/`, `router.py` (whole-text cache → rules first → whole text to the LLM only if something is unparsed and an LLM is set up; budget; fallback with the reason shown; returns a `RoutedParse` recording the path used). The LLM gets a flat output schema, the catalog names and the rule parser's conventions, returns no spans, and retries once only on an invalid reply; an overloaded provider (HTTP 503) is waited out a few times (2, 5, 10 s), each try counted in the budget. A phrase-level cache was considered and dropped; see plan.md Parsing → Router.
-- `scheduler/config.py`: reads `.env` (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) from the working directory and writes it from first-run setup. No `.env` or `LLM_PROVIDER=none` means offline. The parse cache and daily call count live in `.cache/` (git-ignored).
-- `scheduler/cli.py`: `python -m scheduler courses.json "prefs" [--review] [--pick N:IDS] [--no-required] [--offline] [--top 5] [--export out.xlsx]`, and `python -m scheduler setup`.
+- `scheduler/config.py`: reads the settings (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) and writes them from first-run setup. Setup writes a user-wide file (`user_dir()`: `%LOCALAPPDATA%\scheduler\config.env` on Windows, `$SCHEDULER_HOME` in tests); a `.env` in the working directory replaces it entirely, and environment variables win over both. `Config.source` says which file was read, and the CLI prints it. No settings or `LLM_PROVIDER=none` means offline. The parse cache and daily call count live in the user-wide folder too (`cache_dir()`).
+- `scheduler/cli.py`: `python -m scheduler courses.json ["prefs" | -] [--review] [--verbose] [--pick [N:]IDS] [--drop IDS] [--no-required] [--offline] [--top 5]` and `python -m scheduler setup` (`--export` comes in step 7). `run()` returns an `Outcome` (exit code plus the catalog, constraints, routed parse and `SolveResult`) so tests can check the schedules behind the printed text. `Review` is the numbered `--review` list. See plan.md, CLI.
+- `scheduler/present.py`: plain-language text shared by the interfaces (unparsed advice, "11 or 12", differences from #1).
 - `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
 
 ## Core rules (don't break these)
@@ -50,7 +51,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 ```powershell
 python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -e ".[dev,gemini]"        # other extras: anthropic, openai
-python -m scheduler setup              # choose a provider + key, or continue offline (or copy .env.example .env)
+python -m scheduler setup              # choose a provider + key, or continue offline (saved user-wide; a project .env overrides it)
 uvicorn scheduler.web.app:app --reload
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free"
 pytest -q                              # offline suite
@@ -71,6 +72,7 @@ All tests use **pytest** and are written before the code. The detailed workflows
 Key rules:
 - **Test-first:** turn the build step's Verification bullets in plan.md into named failing tests, then write the code, then run `pytest -q`.
 - **`pytest -q` must pass offline**, with no network, no API keys and no `.env`. Mock LLMs with `tests/helpers/fake_provider.py`. Set config with `monkeypatch`.
+- **No test reads the real settings or cache.** conftest points `SCHEDULER_HOME` at a temporary folder, clears the settings variables and runs the suite in an empty working directory. Tests that need settings use the `fresh_settings` fixture. Only the live eval reads the real ones, explicitly (`tests/helpers/real_settings.py`).
 - Reuse the shared helpers in `tests/helpers/` (catalog builder, `assert_valid_schedule`/`assert_valid_results` invariant checker, brute-force oracle). Don't redefine them inside test files.
 - Every solver test runs its results through the invariant checker.
 - Rule parser cases go in `tests/data/phrases.yaml` (phrase → expected constraints and unparsed text). Optional `llm:` expectations feed the live eval.
@@ -92,4 +94,4 @@ Key rules:
   - Generate combinations instead of hand-picking examples (parser verbs × list forms × both catalogs).
   - Parser phrases run against the realistic sample catalog too (`catalog: sample`), not only the tidy phrase catalog.
   - Hypothesis strategies must vary everything the code depends on: mixed hard/soft requests, different weeks, constraint times off the hour. Widen them when a feature adds a new dimension.
-- **End-to-end scenarios** (`tests/test_end_to_end.py`): text → parser → picker defaults → solver on the sample catalog. Steps 5 and 6 must add the same scenarios through the CLI and the API.
+- **End-to-end scenarios** (`tests/test_end_to_end.py`): text → parser → picker defaults → solver on the sample catalog. Step 5 added the same scenarios through the CLI (`tests/test_end_to_end_cli.py`, run in-process with `tests/helpers/cli_runner.py`, plus generated flag combinations on both catalogs); step 6 must add them through the API.

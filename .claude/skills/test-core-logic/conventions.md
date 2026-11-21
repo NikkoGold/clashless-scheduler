@@ -18,6 +18,9 @@ tests/
   helpers/oracle.py            # owned by test-core-logic
   helpers/strategies.py        # owned by test-core-logic (after step 2)
   helpers/fake_provider.py     # owned by test-llm-parser
+  helpers/fake_console.py      # owned by test-interfaces: typed and hidden answers, tty, stdin
+  helpers/cli_runner.py        # owned by test-interfaces: run the CLI in-process
+  helpers/real_settings.py     # the real environment, for the live eval only
   data/phrases.yaml            # owned by test-rule-parser, read by the live LLM eval
   data/phrase_catalog.json     # fixed catalog the phrases are parsed against
   test_catalog.py
@@ -35,6 +38,7 @@ Helpers are created once and reused. Never redefine a builder or checker inside 
 
 ## Rules
 - `pytest -q` must pass offline: no network, no API keys, no `.env` needed. Use `monkeypatch.setenv`/`delenv` for config.
+- No test reads the real settings or cache: conftest points `SCHEDULER_HOME` at a temporary folder and runs the suite in an empty working directory. Use the `fresh_settings` fixture when a test needs its own settings.
 - Markers (registered in `pyproject.toml` under `[tool.pytest.ini_options]`):
   - `slow` — longer solver runs; still run by default.
   - `live` — real LLM calls; skipped unless `RUN_LIVE_LLM=1`. Capped by `LIVE_LLM_MAX_CALLS` (default 20), separate from the app's `LLM_MAX_CALLS_PER_DAY`. Run only after a change that affects the LLM path (see test-llm-parser), never with routine runs.

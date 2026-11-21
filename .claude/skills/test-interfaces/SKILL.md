@@ -10,20 +10,13 @@ Follow [../test-core-logic/conventions.md](../test-core-logic/conventions.md). B
 ## End-to-end scenarios (required in steps 5 and 6)
 `tests/test_end_to_end.py` runs real-use scenarios on the sample catalog (text → parser → picker defaults → solver). Each interface step must run **the same scenarios through its own interface**: the CLI in step 5 (`main(argv)` on `data/sample_courses.json`), the API in step 6 (`TestClient`: catalog → parse → solve). Assert the same outcomes (the documented counts, the ZGC conflict, unparsed fragments reported, every rule in the breakdown). Until the UI exists, these are the only tests that simulate real use.
 
-## CLI (`test_cli.py`)
-Call `main(argv)` directly and capture output with `capsys`; assert on exit code and text.
-- Basic run prints K schedules; `--top N` changes the count.
-- "Only N possible" message when fewer than K exist.
-- `--pick 2:CS101,CS102,CS103` → exactly 2 of the pool chosen; pool < N → clear error, non-zero exit.
-- Courses with `"required": true` are scheduled by default (as `must_take`); `--no-required` drops them.
-- `--offline` never calls the LLM even when one is configured; the parser path used is always printed.
-- No `.env`: runs offline, prints the one-line "offline mode is limited; run `python -m scheduler setup`" notice, and still solves.
-- `setup`: choosing a provider writes `.env` (to `tmp_path`); "continue offline" writes `LLM_PROVIDER=none` and the first-run notice stops appearing.
-- Unparsed fragments are printed as warnings.
-- Infeasible input prints the conflict explanation, non-zero exit.
-- A timed-out result prints its note and the results it found (simulate with the solver's `_clock`, as in `tests/test_solver_time_limit.py`).
-- `--export out.xlsx` writes the file (checked as below).
-- `--review`: feed edited text via monkeypatched `input`, confirm re-parse happens.
+## CLI (built in step 5)
+Run it in-process with `tests/helpers/cli_runner.py`: `cli(path, "prefs", "--offline", console=FakeConsole([...]), provider=fake)` returns the exit code, stdout, stderr and the `Outcome` (catalog, constraints, routed parse, `SolveResult`). Run every solved result through `assert_valid_results`, so tests check schedules, not just wording. Mark CLI test modules with `pytestmark = pytest.mark.usefixtures("fresh_settings")`: each test gets its own empty user-wide folder and working folder (a true first run; `fresh_settings.save(...)` writes settings). Typed answers, hidden answers (getpass), "is a terminal" and stdin all come from `tests/helpers/fake_console.py`.
+- `test_cli.py`: flags (`--top` 1-20, `--pick [N:]IDS`, `--drop`, `--no-required`, `--offline`, `-` for stdin), what's printed (courses, parser path, settings source, rules, unparsed advice, sessions, merged "11 or 12", register notes, differences from #1, broken rules or `--verbose` all rules), exit codes, and readable errors.
+- `test_cli_review.py`: the `Review` commands, including several numbers at once equalling one command each, invalid commands changing nothing, and a Hypothesis test of random command sequences against a reference model.
+- `test_cli_setup.py`: first run (terminal question vs one-line notice), setup per provider, keys read hidden and never printed, Enter keeps a saved key, cancelling writes nothing.
+- `test_end_to_end_cli.py`: the end-to-end scenarios through the CLI, review sessions, and generated flag × text × catalog combinations.
+- `test_cli_subprocess.py`: a few real `python -m scheduler` runs for the entry point and exit codes.
 
 ## API (`test_api.py`)
 Use FastAPI `TestClient`.

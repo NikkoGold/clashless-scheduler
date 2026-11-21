@@ -17,7 +17,9 @@ pip install -e ".[dev,gemini]"  # or anthropic / openai; leave it out for rules-
 python -m scheduler setup       # choose a provider and paste your key, or continue offline
 ```
 
-No model or key comes with the app. The web UI offers the same setup on first run. **Offline mode** needs no setup and works fully, but it only understands simple, direct phrasing ("no classes before 10", "Fridays off"). Anything else is listed as not understood so you can rephrase it. You can run setup again at any time, or set `LLM_PROVIDER=none` in `.env` to go offline.
+No model or key comes with the app. The CLI offers setup on first run, and so will the web UI. **Offline mode** needs no setup and works fully, but it only understands simple, direct phrasing ("no classes before 10", "Fridays off"). Anything else is listed as not understood so you can rephrase it. You can run setup again at any time.
+
+Setup saves your choice to a user-wide file (`%LOCALAPPDATA%\scheduler\config.env` on Windows, `~/.config/scheduler/config.env` elsewhere), so it works from any folder. The key is stored in plain text there. A `.env` in the folder you run from overrides that file entirely (see [.env.example](.env.example)), and the CLI always prints which file it used.
 
 ## Usage
 
@@ -29,7 +31,15 @@ uvicorn scheduler.web.app:app --reload
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free" --top 5
 ```
 
-CLI options: `--review`, `--pick N:CS101,CS102,...`, `--no-required`, `--offline`, `--top N`, `--export out.xlsx`.
+CLI options:
+- `--pick 2:CS101,CS102,CS103` chooses 2 courses from a pool (`--pick CS101,CS102` takes all of them).
+- `--drop ZGC` switches off a required course, and `--no-required` switches off all of them.
+- `--review` shows the parsed rules as a numbered list to edit before solving (`d 2 4` delete, `h 1` hard/soft, `w 1 3 7` weight, `t` new text, `+ phrase` add, `?` help, Enter solves).
+- `--verbose` lists every rule in each result, met or broken.
+- `--offline` uses the rule parser only for this run, and `--top N` sets how many schedules to show (1-20, default 5).
+- Give `-` instead of the preferences text to read it from stdin.
+
+Exit codes: 0 schedules found, 1 no solution (the conflicting rules are named), 2 a usage or input error.
 
 ## Courses file
 
