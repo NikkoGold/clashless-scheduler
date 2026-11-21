@@ -76,6 +76,8 @@ FILLER = {"please", "thanks", "thank", "you", "i", "am", "would", "like", "to", 
           "lectures", "lessons", "schedule", "course", "courses", "for", "of", "in", "want", "so", "just",
           "per", "it", "that", "we", "ok", "okay", "hi", "hello"}
 LIST_WORDS = {"and", "or"}
+# small words inside course names that never start or end a name typed in part
+LINKING_WORDS = {"a", "an", "the", "of", "to", "for", "in", "on", "at", "and", "or", "with", "by", "from"}
 EXPLICIT_NAME_VERBS = {"prefer", "avoid", "never", "take", "include", "add", "drop", "skip", "exclude", "remove"}
 
 _TIME = r"(?:noon|midday|\d{1,2}(?:[:.]\d{2})?(?:\s?(?:am|pm))?)"
@@ -212,10 +214,12 @@ def _split(text: str, names: list[_Name]) -> list[str]:
     name_starts = {k.split()[0] for n in names for k in (n.key, n.raw) if k} | TITLES
     name_ends = {k.split()[-1] for n in names for k in (n.key, n.raw) if k}
     name_ends |= {roman for roman, digit in ROMAN.items() if digit in name_ends}
-    # any word of an instructor's name may be typed alone ("Avi and Levi" for Avi Cohen and Dana Levi)
-    instructor_words = {w for n in names if n.kind == "instructor" for k in (n.key, n.raw) for w in k.split()}
-    name_starts |= instructor_words
-    name_ends |= instructor_words
+    # a name may be typed in part ("Avi and Levi" for Avi Cohen and Dana Levi, "xenobiology and vehicle
+    # maintenance"), so any word of a name can start or end a list item; linking words like "of" are left out,
+    # since they'd glue unrelated clauses together
+    name_words = {w for n in names for k in (n.key, n.raw) for w in k.split()} - LINKING_WORDS
+    name_starts |= name_words
+    name_ends |= name_words
     cuts, start = [], 0
     for m in SPLIT_AT.finditer(text):
         if _keeps_together(text, m, name_starts, name_ends):

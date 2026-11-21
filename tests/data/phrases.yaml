@@ -594,3 +594,21 @@
   catalog: fullname
   rules: {constraints: [{kind: avoid_instructor, name: Avi Cohen, strength: soft}, {kind: avoid_instructor, name: Ruth Ben-David, strength: soft}], unparsed: []}
   tags: [names, splitting]
+
+# ---- course names typed in part, in lists: any word of a course name can start or end a list item ----
+- text: "take xenobiology and vehicle maintenance"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: XBI}, {kind: must_take, course: GVM}], unparsed: []}
+  tags: [names, splitting]
+- text: "take vehicle maintenance and xenobiology"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: GVM}, {kind: must_take, course: XBI}], unparsed: []}
+  tags: [names, splitting]
+- text: "take xenobiology and fridays off"  # "and" before something that isn't a name still splits
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: XBI}, {kind: day_off, day: Fri}], unparsed: []}
+  tags: [names, splitting]
+- text: "take leadership development and no classes before 10"
+  catalog: sample
+  rules: {constraints: [{kind: must_take, course: OLD}, {kind: no_class_before, time: "10:00"}], unparsed: []}
+  tags: [names, splitting]

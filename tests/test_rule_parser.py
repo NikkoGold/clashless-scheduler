@@ -1,5 +1,6 @@
 """RuleParser: the phrase table in tests/data/phrases.yaml, plus behaviours a table can't express."""
 import difflib
+import itertools
 import json
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from scheduler.catalog import load_catalog
 from scheduler.constraints import check_references
 from scheduler.models import AvoidGroup, DayOff, NoClassBefore, PreferGroup, parse_constraint
 from scheduler.parsing.base import ParseResult, PreferenceParser, Span, UnparsedFragment
-from scheduler.parsing.rules import RuleParser
+from scheduler.parsing.rules import LINKING_WORDS, RuleParser
 from tests.helpers.catalog_builder import catalog, course, grp
 
 DATA = Path(__file__).parent / "data"
@@ -426,3 +427,56 @@ def test_any_word_of_an_instructors_name_picks_them_or_is_ambiguous(text, having
     else:
         assert result.constraints == []
         assert [(f.reason, f.candidates) for f in result.unparsed] == [("ambiguous_name", having)]
+
+
+# ---- course names typed in part, joined by "and" (generated over every catalog) ----
+
+def _partial_course_names(cat):
+    """(what the user types, course id): each course's name without its first word (and any linking word after it:
+    "Intro to Programming" -> "Programming"), when that still names only it."""
+    for c in cat.courses:
+        words = c.name.split()[1:]
+        while words and words[0].lower() in LINKING_WORDS:
+            words = words[1:]
+        if not words:
+            continue
+        partial = " ".join(words)
+        result = RuleParser().parse(f"take {partial}", cat)
+        if [getattr(x, "course", None) for x in result.constraints] == [c.id] and not result.unparsed:
+            yield partial, c.id
+
+
+def _partial_pairs():
+    for cat_name, cat in CATALOGS.items():
+        partials = list(_partial_course_names(cat))
+        others = [(c.name, c.id) for c in cat.courses]
+        for (a, a_id), (b, b_id) in itertools.product(partials, others):
+            if a_id != b_id:
+                yield pytest.param(cat_name, f"take {b} and {a}", {a_id, b_id}, id=f"{cat_name}: take {b} and {a}")
+                yield pytest.param(cat_name, f"take {a} and {b}", {a_id, b_id}, id=f"{cat_name}: take {a} and {b}")
+
+
+@pytest.mark.parametrize("cat_name, text, expected", list(_partial_pairs()))
+def test_a_course_name_typed_in_part_works_anywhere_in_a_list(cat_name, text, expected):
+    result = RuleParser().parse(text, CATALOGS[cat_name])
+    assert result.unparsed == []
+    assert {c.course for c in result.constraints if c.kind == "must_take"} == expected
+
+
+RULE_CLAUSES = {"fridays off": "day_off", "no classes before 10": "no_class_before", "keep 12-13 free": "free_block",
+                "compact schedule": "compact", "at most 4 days": "max_days"}
+
+
+def _name_then_rule():
+    for cat_name, cat in CATALOGS.items():
+        for c in cat.courses:
+            for clause, kind in RULE_CLAUSES.items():
+                yield pytest.param(cat_name, f"take {c.name} and {clause}", c.id, kind, id=f"{cat_name}: {c.name} + {clause}")
+
+
+@pytest.mark.parametrize("cat_name, text, course_id, kind", list(_name_then_rule()))
+def test_and_after_a_course_name_still_splits_off_a_rule(cat_name, text, course_id, kind):
+    result = RuleParser().parse(text, CATALOGS[cat_name])
+    assert result.unparsed == []
+    assert sorted((c.kind, getattr(c, "course", None)) for c in result.constraints) == sorted(
+        [("must_take", course_id), (kind, None)])
