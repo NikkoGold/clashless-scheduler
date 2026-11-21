@@ -1,7 +1,24 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Clashless</title></head>
-<body>
-<p>The page isn't built yet (build step 6 is in progress). The API is running; use the CLI meanwhile.</p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clashless</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='3' width='20' height='19' rx='4' fill='%236d28d9'/%3E%3Cpath d='M7 11h4M7 15h7M13 11h4' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<script type="module" src="/static/app.js"></script>
+</head>
+<body class="app">
+<header class="top" id="header"></header>
+<main class="wrap">
+  <section class="card" id="results" aria-label="Results" hidden></section>
+  <div class="cols">
+    <section class="card picker" id="courses" aria-label="Courses"></section>
+    <section class="card prefs" id="prefs" aria-label="Preferences"></section>
+  </div>
+</main>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<dialog id="setup" aria-label="Setup"></dialog>
+<noscript><p class="wrap">This page needs JavaScript. The CLI works without it: python -m scheduler --help</p></noscript>
 </body>
 </html>

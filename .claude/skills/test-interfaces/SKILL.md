@@ -27,6 +27,7 @@ Use `tests/helpers/api_client.py`: `api(provider=fake)` is a `TestClient` on `cr
 - `test_end_to_end_api.py`: the end-to-end scenarios, a review session, and generated combinations.
 - `test_web_command.py`: `python -m scheduler web` (127.0.0.1, next free port, browser), with uvicorn and the browser recorded, not started.
 - `test_selection.py`: the course choice shared by the CLI and the picker.
+- `test_web_page.py`: the page's wiring without a browser: every `request("METHOD", "/api/...")` in the scripts is a real route, only `api.js` talks to the server, every file and module import exists and is served, nothing loads from the internet, the browser never stores the key, no emoji icons.
 - Step 7 adds `/api/export/xlsx`: correct content type and a loadable workbook.
 
 ## Exports (`test_export.py`)
@@ -34,11 +35,15 @@ Use `tests/helpers/api_client.py`: `api(provider=fake)` is a `TestClient` on `cr
 - **JSON**: export → reload gives an equal solution.
 
 ## Manual checklist (report in the summary, don't automate)
-- First run with no `.env`: setup panel appears; "Continue offline" explains the limits, dismisses the panel for good, and setup can be reopened.
-- Parser-path label shown (`rules`, `llm`, `rules (offline)`, `rules (LLM unavailable: …)`).
-- Course search filters by id, name, instructor while typing.
-- required / in pool / off toggle and "pick N" box.
-- Review checkbox on → editable chips + Solve; off → straight to results.
-- Unparsed fragments highlighted under the text box.
+- First run with nothing set up: the notice in the header says setup is needed beyond basic phrases; "Continue offline" saves it and the notice goes; Setup reopens the dialog (key field empty, "leave empty to keep the saved key").
+- Once an LLM is set up, the LLM | Offline switch appears; Offline reads with the rules only and the note points back to the switch.
+- Parser label and "Read by:" (`rules`, `llm`, `cache`, `rules (offline)`, `rules (LLM unavailable: …)`).
+- Results stay hidden until the first solve; tabs say "every rule met" / "N preferences missed", never a cost number.
+- Course search filters by id, name, instructor while typing; clicking a course expands its groups; hovering shows a bubble after a pause.
+- Required / Pool / Off and the pick-N stepper.
+- Review on → the first Find a schedule shows chips (Hard/Soft hover explanations, compact can't be hard), the second solves; off → straight to results.
+- What wasn't understood is listed under the text box, with its advice.
+- Grid hover highlights the course and dims the others; the session list is collapsed by default.
+- Light and dark themes (violet / teal); reload keeps the tab's session; a new tab starts from the latest; Start over clears it.
 - Merged options shown as "lab 11 or 12"; tabs show differences from #1.
 - Print preview (PDF) shows only the selected grid and course list.

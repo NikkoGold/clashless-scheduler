@@ -51,7 +51,8 @@ scheduler/
     web/
       app.py                # FastAPI: /api/sample, /api/catalog, /api/setup, /api/parse, /api/rules, /api/solve; serves static files
       server.py             # python -m scheduler web: 127.0.0.1 only, next free port, opens the browser
-      static/index.html, app.js, style.css   # upload, preference box, constraint chips, weekly grid
+      static/                 # index.html, style.css; app.js (state, actions), api.js (every call), store.js (session
+                              # memory), header.js (parser switch, setup), picker.js, prefs.js (chips), results.js, dom.js
   tests/
 ```
 
@@ -195,14 +196,21 @@ Provider SDKs are optional extras and are imported only when that provider is se
 A single page:
 1. Upload or select a courses JSON file.
 2. **Course picker** with a search box that filters as you type by course ID, name and instructor (filtered in the browser). Each course has a three-way toggle: *required* / *in pool* / *off*, defaulting from the course's `required` field. Under the pool there's a "pick **N** of these" number box (default: the pool size, so picking 5 when 5 are pooled takes all 5).
-3. Preferences text box, plus a ☐ **Review constraints before solving** checkbox and a **Schedule** button.
-   - Checkbox on: shows editable constraint chips (toggle hard/soft, change the weight, delete) and an "add constraint" form, then a **Solve** button.
+3. Preferences text box, plus a ☐ **Review constraints before solving** checkbox and a **Find a schedule** button (see Page layout).
+   - Checkbox on: the first press shows editable constraint chips (toggle hard/soft, change the weight, delete) and an "add a phrase" box; the next press solves.
    - Checkbox off: goes straight to results.
    - Unparsed fragments are always highlighted under the text box.
 4. Results: tabs for the top-K schedules, each with a weekly time grid (one colour per course), the full breakdown of every rule met or broken, any "Register for 11, or 12, which breaks X instead of Y" notes, and export buttons:
    - **PDF**: the browser's own print-to-PDF (`window.print()`) with a print stylesheet that hides everything except the selected schedule's grid and its course list. No extra dependencies.
    - **Excel**: `GET /api/export/xlsx` builds the file with openpyxl. Sheet 1 is the weekly grid with coloured cells; sheet 2 lists each course, component, group, day, time, room and instructor. The CLI has `--export out.xlsx`.
    - **JSON**: the raw solution, for debugging or reloading.
+
+## Page layout (agreed on the mock-up before building)
+- **Header:** the parser label; once an LLM is set up, an **LLM | Offline** switch beside it (per tab, saves nothing: `/api/parse` takes `offline`, like the CLI's `--offline`). While nothing is set up, the first-run notice sits in the header next to Setup ("Setup is required to understand anything beyond basic phrases…", with **Continue offline**). Then Start over, Setup (a dialog: provider, model, key typed as a password, never shown again) and a sun/moon theme toggle.
+- **Results first**, hidden until the first solve: tabs labelled "every rule met" or "N preferences missed" (the cost number is for the solver and isn't shown), the weekly grid, a session list collapsed by default ("Show as a list"), and beside it what differs from schedule 1, every rule with a ✓/✗ icon, and the notes. When nothing fits: the conflicting rules.
+- **Courses card:** catalog file / sample at the top, search, each course's Required / Pool / Off, pick N. Clicking a course expands its groups; hovering shows them in a bubble after a short pause.
+- **Preferences card:** the text, what wasn't understood (with "Read by: <parser>"), Review, Results (top K) and **Find a schedule**. With Review on, the first press reads the text and shows the rules as chips (Hard/Soft explained on hover, weight, remove, add a phrase); the next press solves. With Review off, one press does both. Changing the text afterwards means the next press reads it again.
+- **Look:** violet accent in light mode, teal in dark; 15 course colours; pressed and selected states change the background; hovering a class in the grid highlights that course and dims the rest. Icons are Lucide SVGs (ISC), never emoji. The page points at the Setup button where the CLI names `python -m scheduler setup`.
 
 ## Web app (decided before step 6)
 - **A local app, not a website.** `python -m scheduler web` starts a Python process on this computer and opens the browser at `http://127.0.0.1:8000`. The page is static files (plain HTML, CSS and JS modules, no framework, no build step, nothing loaded from the internet); the work is done by the same parser, router and solver as the CLI, behind a small API. A page that runs with no Python at all would mean rewriting the solver (OR-Tools has no browser build), so it isn't planned.

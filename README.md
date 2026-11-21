@@ -17,7 +17,7 @@ pip install -e ".[dev,gemini]"  # or anthropic / openai; leave it out for rules-
 python -m scheduler setup       # choose a provider and paste your key, or continue offline
 ```
 
-No model or key comes with the app. The CLI offers setup on first run, and so will the web UI. **Offline mode** needs no setup and works fully, but it only understands simple, direct phrasing ("no classes before 10", "Fridays off"). Anything else is listed as not understood so you can rephrase it. You can run setup again at any time.
+No model or key comes with the app. The CLI offers setup on first run, and the web page shows a Setup button with a notice until you choose. Once an LLM is set up, the page has an LLM | Offline switch for when you want the rules only. **Offline mode** needs no setup and works fully, but it only understands simple, direct phrasing ("no classes before 10", "Fridays off"). Anything else is listed as not understood so you can rephrase it. You can run setup again at any time.
 
 Setup saves your choice to a user-wide file (`%LOCALAPPDATA%\scheduler\config.env` on Windows, `~/.config/scheduler/config.env` elsewhere), so it works from any folder. The key is stored in plain text there. A `.env` in the folder you run from overrides that file entirely (see [.env.example](.env.example)), and the CLI always prints which file it used.
 
