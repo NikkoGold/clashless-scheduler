@@ -44,11 +44,13 @@ scheduler/
       providers/            # gemini.py (default), anthropic.py, openai.py, ollama.py — each a small adapter
       router.py             # whole-text cache → rules first → LLM only if needed and configured (budget, errors → rules result)
     config.py               # reads the settings (user-wide file, or a project .env); writes them from first-run setup
-    present.py              # plain-language text shared by the interfaces
+    present.py              # plain-language text shared by the interfaces (rules, unparsed advice, schedule views)
+    selection.py            # required / pool / off and pick N, shared by the CLI flags and the web picker
     cli.py                  # python -m scheduler courses.json ["prefs..." | -] [--review] [--verbose] [--pick 5:CS101,CS102,...] [--drop IDS] [--no-required] [--offline] [--top 5] [--export out.xlsx (step 7)]
                             # python -m scheduler setup   (choose provider + key, or offline)
     web/
-      app.py                # FastAPI: /api/catalog, /api/parse, /api/solve; serves static files
+      app.py                # FastAPI: /api/sample, /api/catalog, /api/setup, /api/parse, /api/rules, /api/solve; serves static files
+      server.py             # python -m scheduler web: 127.0.0.1 only, next free port, opens the browser
       static/index.html, app.js, style.css   # upload, preference box, constraint chips, weekly grid
   tests/
 ```
@@ -202,6 +204,18 @@ A single page:
    - **Excel**: `GET /api/export/xlsx` builds the file with openpyxl. Sheet 1 is the weekly grid with coloured cells; sheet 2 lists each course, component, group, day, time, room and instructor. The CLI has `--export out.xlsx`.
    - **JSON**: the raw solution, for debugging or reloading.
 
+## Web app (decided before step 6)
+- **A local app, not a website.** `python -m scheduler web` starts a Python process on this computer and opens the browser at `http://127.0.0.1:8000`. The page is static files (plain HTML, CSS and JS modules, no framework, no build step, nothing loaded from the internet); the work is done by the same parser, router and solver as the CLI, behind a small API. A page that runs with no Python at all would mean rewriting the solver (OR-Tools has no browser build), so it isn't planned.
+- **No per-user state on the server.** The browser keeps the catalog and sends it with each request, so tabs never interfere and several tabs are several independent instances. A second `web` takes the next free port (8001, ...) and says so. The parse cache and daily LLM count are shared through the user-wide folder; each file's read-then-write happens under a lock, and each write goes through its own temporary file, so parallel requests neither crash (Windows refuses to replace a file being read) nor both pass the daily limit.
+- **Settings are read on every request**, so setup saved from the page applies at once. The page never gets the key back: only the provider, model, settings file, environment overrides, whether a key is saved, and whether setup is needed.
+- **Only this computer is answered:** the server listens on 127.0.0.1; requests whose Host isn't localhost or 127.0.0.1 are refused (DNS rebinding); POSTs must be JSON (other sites can send forms or plain text without permission, but not JSON); no CORS headers, so other sites can't read responses.
+- **API** (all JSON; errors are `{"error": "..."}` with a 4xx status): `GET /api/sample`; `POST /api/catalog` (courses, week, term, or the loader's error); `GET/POST /api/setup`; `POST /api/parse` (rules with descriptions, unparsed with advice, parser path and label, spans; also review mode's "add a phrase"); `POST /api/rules` (checks edited chips and returns their descriptions, so all wording stays in Python); `POST /api/solve` (catalog, course modes, pick N, rules, top K: the raw `SolveResult` plus display text per schedule: sessions, rules met or broken with cost, notes, differences from #1). Display text comes from `present.py`, and course choice from `selection.py`, both shared with the CLI.
+- **Long solves:** a normal request with a loading indicator and elapsed time; Cancel stops waiting in the browser (the server finishes its current solve, within the 3-minute limit).
+- **Review mode:** chips for hard/soft, weight and delete, and a phrase box for adding rules (like the CLI's `+ phrase`); a structured "add constraint" form may come later. Unparsed phrases are listed under the text box with their advice (inline marking is skipped: the LLM's fragments aren't always exact pieces of the text).
+- **Weekly grid:** a CSS grid, one column per day of the catalog's week and one row per hour from the earliest class to the latest; a fixed colour per course across tabs; merged options show "lab 11 or 12".
+- **Remembering:** each tab keeps its own session in `sessionStorage` (a reload restores it); the latest session is also saved to `localStorage` and read only when a new tab opens, so a new tab starts from where you left off, then lives on its own. "Start over" clears the tab. The key is never stored in the browser.
+- **Testing:** API tests with FastAPI's test client, including the end-to-end scenarios and generated combinations; the page by a manual checklist, plus a check that it only calls routes and files that exist. No browser automation for now.
+
 ## CLI (decided before step 5)
 - `python -m scheduler courses.json ["prefs" | -]`: the text is optional (none means no preferences); `-` reads it from stdin.
 - **Courses** come from `--pick` and the required courses. `--pick N:IDS` takes N of the pool, and `--pick IDS` takes all of them (the UI default). `--drop IDS` switches individual required courses off (the picker's "off"); `--no-required` switches them all off. A required course listed in `--pick` moves into the pool and stops being a must-take, like the picker's three-way toggle. With no `--pick` and no required courses left (none marked, or `--no-required`), it stops with a message pointing to `--pick` rather than solving an empty request.
@@ -221,7 +235,7 @@ A single page:
    - Discussed before starting: how to keep each call as cheap as possible, so the app works on free tiers and tight limits, and whether the LLM returns source spans (it doesn't). The decisions are under Parsing → LLMParser and Router.
    - The live eval (`tests/test_llm_live.py`, opt-in) runs up to 17 phrases against Gemini (most of them text the rules leave unparsed), capped at 20 calls, and every phrase must pass. It's the only check of the prompt itself with a real model.
 5. The CLI (`--review`, `--verbose`, `--pick`, `--drop`, `--no-required`, `--offline`, `--top`), plus `python -m scheduler setup`, the first-run offer and offline notice, and the user-wide settings file. Decided before starting: see CLI and Config → Where settings live.
-6. The FastAPI endpoints and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label).
+6. The FastAPI endpoints, `python -m scheduler web`, and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label). Decided before starting: see Web app.
    - **A loading indicator while solving.** A request can take up to the 3-minute limit: a reasonable wait, but a long time for a frozen screen. Show that it's working, and show the `timed_out` note clearly when it applies.
 7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.
 
@@ -233,4 +247,4 @@ A single page:
 ## Verification
 - `pytest`: catalog validation; the solver on small hand-made catalogs (known best answer, infeasible cases explained, top-K results all different; a catalog with only 2 valid schedules and K=5 returns exactly 2 with the "only 2 possible" note; back-to-back 10–12 then 12–14 is allowed; a group with several sessions is all-or-nothing, so a clash with only its second session rules out the whole group; pick-N where the pool equals N takes all courses; any lab is allowed with any lecture; two labs at identical times merge into one option and don't produce duplicate-looking results; `attendance_required: false` is accepted but doesn't change the solution; times not on the hour are rejected); each RuleParser phrase test; the LLM parser using a mocked provider (valid output, invalid output followed by retry, and fallback on error); the router never calls the LLM when the rules parse everything, calls it with the whole text when something is unparsed, and runs offline with no `.env` at all.
 - End to end (`tests/test_end_to_end.py`): real-use scenarios on the sample catalog, from the user's text through the parser and the picker's defaults to the solver, checked by the invariant checker. Each later step adds the same scenarios through its own interface (CLI in step 5, API in step 6), since there is no other real-use testing until the UI exists.
-- Manual: `uvicorn scheduler.web.app:app --reload`, load `data/sample_courses.json`, enter "no classes before 10, prefer Cohen, keep 12-13 free" (adding "fridays off" should report the ZGC conflict; see `data/README.md`), parse once with `LLM_PROVIDER=gemini` and once with `none`, and check that the chips and schedules make sense.
+- Manual: `python -m scheduler web` (or `uvicorn scheduler.web.app:app --reload --host 127.0.0.1`), load `data/sample_courses.json`, enter "no classes before 10, prefer Cohen, keep 12-13 free" (adding "fridays off" should report the ZGC conflict; see `data/README.md`), parse once with `LLM_PROVIDER=gemini` and once with `none`, and check that the chips and schedules make sense.

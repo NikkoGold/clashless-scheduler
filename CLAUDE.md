@@ -23,7 +23,8 @@ courses.json ──► catalog (Pydantic) ────────────�
 - `scheduler/config.py`: reads the settings (`LLM_PROVIDER`, `LLM_MODEL`, API keys, `LLM_MAX_CALLS_PER_DAY`) and writes them from first-run setup. Setup writes a user-wide file (`user_dir()`: `%LOCALAPPDATA%\scheduler\config.env` on Windows, `$SCHEDULER_HOME` in tests); a `.env` in the working directory replaces it entirely, and environment variables win over both. `Config.source` says which file was read, and the CLI prints it. No settings or `LLM_PROVIDER=none` means offline. The parse cache and daily call count live in the user-wide folder too (`cache_dir()`).
 - `scheduler/cli.py`: `python -m scheduler courses.json ["prefs" | -] [--review] [--verbose] [--pick [N:]IDS] [--drop IDS] [--no-required] [--offline] [--top 5]` and `python -m scheduler setup` (`--export` comes in step 7). `run()` returns an `Outcome` (exit code plus the catalog, constraints, routed parse and `SolveResult`) so tests can check the schedules behind the printed text. `Review` is the numbered `--review` list. See plan.md, CLI.
 - `scheduler/present.py`: plain-language text shared by the interfaces (unparsed advice, "11 or 12", differences from #1).
-- `scheduler/web/`: `app.py` (FastAPI `/api/catalog`, `/api/parse`, `/api/solve`, `/api/export/xlsx`) and `static/`.
+- `scheduler/selection.py`: required / pool / off and pick N, turned into constraints; shared by the CLI flags and the web picker.
+- `scheduler/web/`: `app.py` (`create_app()`; FastAPI `/api/sample`, `/api/catalog`, `/api/setup`, `/api/parse`, `/api/rules`, `/api/solve`, and `/api/export/xlsx` in step 7; static files), `server.py` (`python -m scheduler web`: 127.0.0.1 only, next free port, opens the browser) and `static/` (plain HTML/CSS/JS modules, no build). The server keeps no per-user state and answers only this computer (Host check, JSON-only POSTs, no CORS); see plan.md, Web app.
 
 ## Core rules (don't break these)
 - **The user is always fully informed about a schedule they're shown.** Every result shows every rule, hard and soft, as met or broken. Trade-offs are stated ("Register for 11, or 12, which breaks X instead of Y"), and when nothing fits, the conflicting rules are named. Every interface must carry this through.
@@ -52,7 +53,7 @@ courses.json ──► catalog (Pydantic) ────────────�
 python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -e ".[dev,gemini]"        # other extras: anthropic, openai
 python -m scheduler setup              # choose a provider + key, or continue offline (saved user-wide; a project .env overrides it)
-uvicorn scheduler.web.app:app --reload
+python -m scheduler web               # the page, on 127.0.0.1 (or: uvicorn scheduler.web.app:app --reload --host 127.0.0.1)
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free"
 pytest -q                              # offline suite
 $env:RUN_LIVE_LLM=1; pytest -m live -s; Remove-Item Env:RUN_LIVE_LLM   # opt-in real-LLM eval; clears the flag so later runs stay offline

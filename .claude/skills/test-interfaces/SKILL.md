@@ -18,13 +18,16 @@ Run it in-process with `tests/helpers/cli_runner.py`: `cli(path, "prefs", "--off
 - `test_end_to_end_cli.py`: the end-to-end scenarios through the CLI, review sessions, and generated flag × text × catalog combinations.
 - `test_cli_subprocess.py`: a few real `python -m scheduler` runs for the entry point and exit codes.
 
-## API (`test_api.py`)
-Use FastAPI `TestClient`.
-- `/api/catalog`: valid upload returns courses; invalid JSON / schema error → 4xx with a readable message.
-- `/api/parse`: returns constraints, `unparsed`, and `parser`.
-- `/api/solve`: top-K results with breakdown and diff-vs-#1; `top` param bounded 1–20; infeasible → explanation, not a 500.
-- `/api/export/xlsx`: correct content type and a loadable workbook.
-- Static `index.html` is served.
+## API (built in step 6)
+Use `tests/helpers/api_client.py`: `api(provider=fake)` is a `TestClient` on `create_app()` with Host 127.0.0.1 (the default `testserver` Host is refused, on purpose); `parse()` and `solve()` call the API like the page does, and `solve()` runs every result through the invariant checker. Mark modules with `pytestmark = pytest.mark.usefixtures("fresh_settings")`.
+- `test_api.py`: catalog, parse, rules and solve, the display text, and errors always being `{"error": ...}` with a 4xx.
+- `test_api_setup.py`: setup through the API; the key never comes back.
+- `test_api_security.py`: Host check on every route, JSON-only POSTs, no CORS headers.
+- `test_api_concurrency.py`: parallel solves, and parallel writes to the shared cache and daily count.
+- `test_end_to_end_api.py`: the end-to-end scenarios, a review session, and generated combinations.
+- `test_web_command.py`: `python -m scheduler web` (127.0.0.1, next free port, browser), with uvicorn and the browser recorded, not started.
+- `test_selection.py`: the course choice shared by the CLI and the picker.
+- Step 7 adds `/api/export/xlsx`: correct content type and a loadable workbook.
 
 ## Exports (`test_export.py`)
 - **Excel**: open with `openpyxl.load_workbook`. Sheet 1: weekly grid covering the catalog's `week`, cells for each session filled with that course's colour. Sheet 2: one row per session with course, component, group, day, time, room, instructor.

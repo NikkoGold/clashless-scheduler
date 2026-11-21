@@ -24,8 +24,8 @@ Setup saves your choice to a user-wide file (`%LOCALAPPDATA%\scheduler\config.en
 ## Usage
 
 ```sh
-# Web UI
-uvicorn scheduler.web.app:app --reload
+# Web page (opens your browser; served on this computer only)
+python -m scheduler web
 
 # CLI
 python -m scheduler data/sample_courses.json "no classes before 10, keep 12-13 free" --top 5
