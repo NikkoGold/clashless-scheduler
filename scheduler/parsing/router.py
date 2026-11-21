@@ -5,7 +5,8 @@
 3. Otherwise the whole-text cache, then the LLM with the whole text (never just the leftover clauses).
 4. If the LLM can't be used (no key, SDK missing, daily limit, an error, invalid replies), the rules result is
    used and the path says why.
-The cache and the daily call count are small files in .cache/, so they also work across CLI runs. See plan.md, Router.
+The cache and the daily call count are small files in the user-wide folder (config.cache_dir()), so they also work
+across CLI runs and folders. See plan.md, Router.
 """
 import hashlib
 import json
@@ -16,14 +17,13 @@ from typing import Callable
 
 from pydantic import BaseModel, ValidationError
 
-from scheduler.config import Config
+from scheduler.config import Config, cache_dir as default_cache_dir
 from scheduler.models import Catalog
 from scheduler.parsing.base import ParseResult
 from scheduler.parsing.llm import LLMFailed, LLMParser
 from scheduler.parsing.providers import Provider, ProviderUnavailable, make_provider
 from scheduler.parsing.rules import RuleParser
 
-CACHE_DIR = Path(".cache")
 CACHE_SIZE = 200
 OFFLINE_NOTE = ("Offline: only simple, direct phrasing is understood. "
                 "Set up an LLM (python -m scheduler setup) to have free-form text read as well.")
@@ -102,12 +102,13 @@ def cache_key(text: str, catalog: Catalog, config: Config) -> str:
 
 
 class Router:
-    def __init__(self, config: Config, cache_dir: Path = CACHE_DIR,
+    def __init__(self, config: Config, cache_dir: Path | None = None,
                  provider_factory: Callable[[Config], Provider] = make_provider,
                  today: Callable[[], date] = date.today, cache_size: int = CACHE_SIZE):
         self.config = config
         self.provider_factory = provider_factory
         self.rules = RuleParser()
+        cache_dir = default_cache_dir() if cache_dir is None else cache_dir
         self.cache = ParseCache(Path(cache_dir) / "parse_cache.json", cache_size)
         self.budget = DailyBudget(Path(cache_dir) / "llm_usage.json", config.max_calls_per_day, today)
 

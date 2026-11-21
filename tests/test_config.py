@@ -1,11 +1,23 @@
-"""config.py: reading .env (with defaults) and writing it from first-run setup. Never touches the real .env."""
+"""config.py: reading settings (with defaults) and writing them from first-run setup.
+
+Never touches the real settings: conftest points the user-wide folder and the working directory at temporary ones.
+"""
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from scheduler.config import DEFAULT_MAX_CALLS, DEFAULT_OLLAMA_URL, git_ignored, load_config, write_setup
+from scheduler.config import (
+    DEFAULT_MAX_CALLS,
+    DEFAULT_OLLAMA_URL,
+    cache_dir,
+    git_ignored,
+    load_config,
+    user_config_path,
+    user_dir,
+    write_setup,
+)
 
 ROOT = Path(__file__).parent.parent
 
@@ -188,3 +200,131 @@ def test_git_ignored_is_none_when_git_cant_run(tmp_path, monkeypatch):
 
 def test_the_projects_own_env_is_git_ignored():
     assert ".env" in (ROOT / ".gitignore").read_text(encoding="utf-8").split()
+
+
+# ---- where settings live: a user-wide file, overridden by a project .env ----
+
+def test_the_user_wide_folder_is_in_local_app_data_on_windows():
+    env = {"LOCALAPPDATA": "C:/Users/u/AppData/Local", "XDG_CONFIG_HOME": "/x"}
+    assert user_dir(env, platform="win32") == Path("C:/Users/u/AppData/Local") / "scheduler"
+
+
+def test_the_user_wide_folder_follows_xdg_elsewhere():
+    assert user_dir({"XDG_CONFIG_HOME": "/home/u/.cfg"}, platform="linux") == Path("/home/u/.cfg") / "scheduler"
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])  # Windows without LOCALAPPDATA too
+def test_the_user_wide_folder_falls_back_to_dot_config(platform):
+    assert user_dir({}, platform=platform) == Path.home() / ".config" / "scheduler"
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_scheduler_home_overrides_the_user_wide_folder(tmp_path, platform):
+    env = {"SCHEDULER_HOME": str(tmp_path), "LOCALAPPDATA": "C:/x", "XDG_CONFIG_HOME": "/x"}
+    assert user_dir(env, platform=platform) == tmp_path
+
+
+def test_the_settings_file_and_cache_live_in_the_user_wide_folder(tmp_path):
+    env = {"SCHEDULER_HOME": str(tmp_path)}
+    assert user_config_path(env) == tmp_path / "config.env"
+    assert cache_dir(env) == tmp_path / "cache"
+
+
+@pytest.fixture
+def places(tmp_path):
+    """Settings pointing at an empty user-wide folder, its settings file, and a project .env (not yet written)."""
+    home, work = tmp_path / "home", tmp_path / "work"
+    home.mkdir()
+    work.mkdir()
+    return {"SCHEDULER_HOME": str(home)}, home / "config.env", work / ".env"
+
+
+def test_with_no_project_env_the_user_wide_file_is_used(places):
+    env, user_file, project = places
+    user_file.write_text("LLM_PROVIDER=gemini\nGEMINI_API_KEY=user\n", encoding="utf-8")
+    cfg = load_config(environ=env, project_env=project)
+    assert (cfg.provider, cfg.api_key) == ("gemini", "user")
+    assert cfg.source == user_file.resolve()
+
+
+def test_a_project_env_replaces_the_user_wide_file_entirely(places):
+    # not merged: the user file's key must not be paired with the project's provider
+    env, user_file, project = places
+    user_file.write_text("LLM_PROVIDER=gemini\nGEMINI_API_KEY=user\nLLM_MAX_CALLS_PER_DAY=9\n", encoding="utf-8")
+    project.write_text("LLM_PROVIDER=gemini\n", encoding="utf-8")
+    cfg = load_config(environ=env, project_env=project)
+    assert cfg.api_key is None and cfg.max_calls_per_day == DEFAULT_MAX_CALLS
+    assert cfg.source == project.resolve()
+
+
+def test_environment_variables_override_both_files_and_are_named(places):
+    env, user_file, project = places
+    project.write_text("LLM_PROVIDER=gemini\nGEMINI_API_KEY=project\n", encoding="utf-8")
+    cfg = load_config(environ={**env, "GEMINI_API_KEY": "from-env"}, project_env=project)
+    assert cfg.api_key == "from-env"
+    assert cfg.from_environment == ("GEMINI_API_KEY",)
+
+
+def test_with_no_settings_anywhere_the_source_is_none_and_setup_is_offered(places):
+    env, _, project = places
+    cfg = load_config(environ=env, project_env=project)
+    assert cfg.source is None and cfg.from_environment == () and cfg.needs_setup
+
+
+def test_settings_given_only_by_the_environment_need_no_setup(places):
+    env, _, project = places
+    cfg = load_config(environ={**env, "LLM_PROVIDER": "none"}, project_env=project)
+    assert cfg.source is None and cfg.from_environment == ("LLM_PROVIDER",) and not cfg.needs_setup
+
+
+@pytest.mark.parametrize("where", ["user", "project"])
+def test_a_saved_choice_in_either_file_means_setup_isnt_offered(places, where):
+    env, user_file, project = places
+    (user_file if where == "user" else project).write_text("LLM_PROVIDER=none\n", encoding="utf-8")
+    assert not load_config(environ=env, project_env=project).needs_setup
+
+
+def test_setup_writes_the_user_wide_file_by_default_creating_its_folder(tmp_path, monkeypatch):
+    home = tmp_path / "new" / "home"
+    monkeypatch.setenv("SCHEDULER_HOME", str(home))
+    report = write_setup(provider="gemini", api_key="k", is_ignored=lambda p: None)
+    assert report.path == (home / "config.env").resolve()
+    assert load_config(environ={"SCHEDULER_HOME": str(home)}, project_env=tmp_path / "none.env").api_key == "k"
+
+
+def test_setup_without_a_key_keeps_the_saved_key(tmp_path):
+    path = env_file(tmp_path, "LLM_PROVIDER=gemini\nGEMINI_API_KEY=saved\n")
+    write_setup(path, "gemini", model="gemini-other", is_ignored=lambda p: True)
+    cfg = load_config(path, environ={})
+    assert (cfg.model, cfg.api_key) == ("gemini-other", "saved")
+
+
+def test_setup_writes_an_ollama_url_when_given(tmp_path):
+    path = tmp_path / "config.env"
+    write_setup(path, "ollama", model="llama3", ollama_url="http://box:11434", is_ignored=lambda p: None)
+    assert load_config(path, environ={}).ollama_url == "http://box:11434"
+
+
+def test_setup_warns_when_a_project_env_here_will_override_it(places):
+    env, user_file, project = places
+    project.write_text("LLM_PROVIDER=none\n", encoding="utf-8")
+    report = write_setup(user_file, "gemini", api_key="k", is_ignored=lambda p: None, project_env=project)
+    assert report.warning and str(project.resolve()) in report.warning and "overrides" in report.warning
+
+
+def test_setup_into_the_project_env_itself_doesnt_warn_about_overriding(places):
+    _, _, project = places
+    report = write_setup(project, "none", is_ignored=lambda p: True, project_env=project)
+    assert report.warning is None
+
+
+# ---- the test suite itself never touches the real settings ----
+
+def test_the_suite_points_the_user_wide_folder_at_a_temporary_one(tmp_path_factory):
+    base = tmp_path_factory.getbasetemp().resolve()
+    assert base in user_dir().resolve().parents
+
+
+def test_the_suite_runs_outside_the_project_so_its_env_is_never_read():
+    assert Path.cwd().resolve() != ROOT.resolve()
+    assert load_config().source is None

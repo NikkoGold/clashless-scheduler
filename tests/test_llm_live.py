@@ -1,8 +1,9 @@
 """Live eval: the real LLM parser on the phrases with an `llm:` expectation. The only test that uses the network.
 
-Skipped unless RUN_LIVE_LLM=1. Uses the provider in .env (the project evaluates Gemini), calls the LLMParser directly
-(the router would answer simple phrases with the rules) with no cache, and stops after LIVE_LLM_MAX_CALLS real
-calls (default 20, retries included).
+Skipped unless RUN_LIVE_LLM=1. Uses your real settings (the project evaluates Gemini): the only test allowed to read
+them, so it asks for them explicitly (the rest of the suite runs against temporary ones, see conftest). It calls the
+LLMParser directly (the router would answer simple phrases with the rules) with no cache, and stops after
+LIVE_LLM_MAX_CALLS real calls (default 20, retries included).
 
 Every phrase is expected to pass, and each failure is a bug to trace to its root cause. Phrases come in two tiers:
 - clear: the rule parser reads the whole phrase, so the LLM must too. Always all-or-nothing.
@@ -20,6 +21,7 @@ from scheduler.config import load_config
 from scheduler.models import parse_constraint
 from scheduler.parsing.llm import LLMFailed, LLMParser
 from scheduler.parsing.providers import make_provider
+from tests.helpers.real_settings import REAL_CWD, REAL_ENVIRON
 from tests.test_rule_parser import CASES, catalog_for
 
 LIVE_CASES = [c for c in CASES if "llm" in c]
@@ -71,9 +73,9 @@ def test_most_live_phrases_are_ones_the_rules_cannot_read():
 
 @pytest.mark.live
 def test_the_llm_reads_every_phrase_in_the_table():
-    config = load_config()
+    config = load_config(environ=REAL_ENVIRON, project_env=REAL_CWD / ".env")
     if config.provider == "none":
-        pytest.skip("no LLM set up in .env")
+        pytest.skip("no LLM set up (run python -m scheduler setup)")
     provider = make_provider(config)
     cap = CallCap(int(os.environ.get("LIVE_LLM_MAX_CALLS", str(DEFAULT_MAX_CALLS))))
     min_hard_accuracy = float(os.environ.get("LIVE_LLM_MIN_ACCURACY", "1.0"))

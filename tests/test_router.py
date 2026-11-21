@@ -301,3 +301,27 @@ def test_a_cache_hit_does_not_use_the_daily_limit(tmp_path, cat):
 
 def test_the_default_provider_factory_is_make_provider(tmp_path):
     assert Router(Config(provider="none"), cache_dir=tmp_path).provider_factory is make_provider
+
+
+# ---- where the cache and the daily count live ----
+
+def test_by_default_the_cache_and_daily_count_live_in_the_user_wide_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCHEDULER_HOME", str(tmp_path / "home"))
+    r = Router(gemini())
+    assert r.cache.path == tmp_path / "home" / "cache" / "parse_cache.json"
+    assert r.budget.path == tmp_path / "home" / "cache" / "llm_usage.json"
+
+
+def test_runs_from_two_folders_share_one_daily_count_and_one_cache(tmp_path, monkeypatch, cat):
+    # one key used from many folders still gets one daily limit, and a text parsed in one is cached for the other
+    monkeypatch.setenv("SCHEDULER_HOME", str(tmp_path / "home"))
+    fake = FakeProvider([LLM_REPLY, reply({"kind": "day_off", "day": "Sun"})])
+    paths = []
+    for folder, text in [("a", VAGUE), ("b", VAGUE), ("b", "sundays off, I'm not a morning person")]:
+        (tmp_path / folder).mkdir(exist_ok=True)
+        monkeypatch.chdir(tmp_path / folder)
+        paths.append(Router(gemini(max_calls_per_day=1), provider_factory=lambda c: fake, today=lambda: TODAY)
+                     .parse(text, cat).path)
+    assert paths[:2] == ["llm", "cache"]
+    assert paths[2].startswith("rules (LLM unavailable") and "limit" in paths[2]
+    assert len(fake.calls) == 1
