@@ -38,3 +38,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Personal notes (interview prep)
+/learning-points.md
