@@ -46,4 +46,4 @@ Use `tests/helpers/api_client.py`: `api(provider=fake)` is a `TestClient` on `cr
 - Grid hover highlights the course and dims the others; the session list is collapsed by default.
 - Light and dark themes (violet / teal); reload keeps the tab's session; a new tab starts from the latest; Start over clears it.
 - Merged options shown as "lab 11 or 12"; tabs show differences from #1.
-- Print preview (PDF) shows only the selected grid and course list.
+- With any schedule open (not only #1), the export button (Excel, JSON, print) exports that schedule. Print preview (PDF) shows only that schedule, with the grid and the session list on separate pages.

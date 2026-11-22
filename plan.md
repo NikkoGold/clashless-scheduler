@@ -224,6 +224,13 @@ A single page:
 - **Remembering:** each tab keeps its own session in `sessionStorage` (a reload restores it); the latest session is also saved to `localStorage` and read only when a new tab opens, so a new tab starts from where you left off, then lives on its own. "Start over" clears the tab. The key is never stored in the browser.
 - **Testing:** API tests with FastAPI's test client, including the end-to-end scenarios and generated combinations; the page by a manual checklist, plus a check that it only calls routes and files that exist. No browser automation for now.
 
+## Exports (decided before step 7)
+- **Export the schedule you're looking at.** While a schedule is open, an export button exports that schedule, whatever its rank (the 15th as easily as the 1st), not only #1 or all of them. It covers Excel, JSON and print.
+- **Excel:** one schedule per workbook. Sheet 1 is the weekly grid over the catalog's `week`: classes longer than an hour are merged cells, merged options read "lab 11 or 12" as on screen, and each course has the same colour as on the page. Sheet 2 has one row per session (course, component, group, day, time, room, instructor). The 15 course hues move from `dom.js` into Python, as one list that the page and the workbook both use, so the colours can't drift apart.
+- **PDF = browser print only** (no PDF from the CLI, no new dependency). The print stylesheet prints only the chosen schedule, with **the grid and the session list on separate pages**.
+- **JSON:** the schedule's sessions plus the rules and course choices that produced it. There is no import feature yet; the test checks that the file loads back into the models and matches.
+- **CLI `--export out.xlsx|out.json`:** writes #1 by default, and `--export-rank N` chooses any rank. The format is taken from the extension; anything else is a usage error (exit 2).
+
 ## CLI (decided before step 5)
 - `python -m scheduler courses.json ["prefs" | -]`: the text is optional (none means no preferences); `-` reads it from stdin.
 - **Courses** come from `--pick` and the required courses. `--pick N:IDS` takes N of the pool, and `--pick IDS` takes all of them (the UI default). `--drop IDS` switches individual required courses off (the picker's "off"); `--no-required` switches them all off. A required course listed in `--pick` moves into the pool and stops being a must-take, like the picker's three-way toggle. With no `--pick` and no required courses left (none marked, or `--no-required`), it stops with a message pointing to `--pick` rather than solving an empty request.
@@ -245,7 +252,7 @@ A single page:
 5. The CLI (`--review`, `--verbose`, `--pick`, `--drop`, `--no-required`, `--offline`, `--top`), plus `python -m scheduler setup`, the first-run offer and offline notice, and the user-wide settings file. Decided before starting: see CLI and Config → Where settings live.
 6. The FastAPI endpoints, `python -m scheduler web`, and the frontend (first-run setup panel with "Continue offline", search, pick-N, review toggle, unparsed highlighting, parser-path label). Decided before starting: see Web app.
    - **A loading indicator while solving.** A request can take up to the 3-minute limit: a reasonable wait, but a long time for a frozen screen. Show that it's working, and show the `timed_out` note clearly when it applies.
-7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON.
+7. Exports: print stylesheet (PDF), openpyxl Excel export, JSON, exporting whichever schedule is open. See Exports.
 
 ## Deferred / out of scope
 - `link_groups`: restricting labs to the matching lecture (format already supports it via `parent`).
