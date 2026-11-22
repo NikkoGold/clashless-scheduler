@@ -103,7 +103,7 @@ function solveBody() {
   };
 }
 
-function parseIsCurrent() {
+export function parseIsCurrent() {
   const p = state.parsed;
   return p && p.text === state.prefs.trim() && p.offline === usingOffline();
 }

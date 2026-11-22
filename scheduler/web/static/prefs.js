@@ -2,6 +2,7 @@
 // and (in review mode) the parsed rules as chips: hard or soft, weight, remove, and "add a phrase".
 
 import {h, icon, fill, bubble} from "./dom.js";
+import {parseIsCurrent} from "./app.js";
 
 const HINTS = {
   hard: ["Hard: a must", "Every schedule keeps this rule. If none can, you're told which rules clash."],
@@ -30,11 +31,12 @@ export function render(state, actions) {
         h("input", {type: "number", min: 1, max: 20, value: state.top, "aria-label": "How many schedules to show",
                     onchange: (e) => actions.setTop(parseInt(e.target.value, 10))})),
       h("span", {class: "spacer"}),
-      h("button", {class: "btn btn-primary", onclick: actions.findSchedule, disabled: !!state.busy}, "Find a schedule")),
+      h("button", {id: "find", class: "btn btn-primary", onclick: actions.findSchedule, disabled: !!state.busy},
+        findLabel(state))),
     h("div", {id: "busy"}),
     state.error && h("div", {class: "notice", role: "alert"}, icon("alert"), h("span", {}, state.error)),
     h("p", {id: "stale", class: "muted small", hidden: !stale},
-      state.review ? "The text changed: Find a schedule reads it again (rule edits below will be replaced)."
+      state.review ? "The text changed: Process constraints reads it again (rule edits below will be replaced)."
                    : "The text changed: Find a schedule reads it again."),
     state.review && p && chips(state, actions));
   tick(state, actions);
@@ -72,6 +74,13 @@ export function tick(state, actions) {
 export function markStale(state) {
   const el = document.getElementById("stale");
   if (el) el.hidden = !(state.parsed && state.parsed.text !== state.prefs.trim());
+  const find = document.getElementById("find");
+  if (find) find.textContent = findLabel(state);
+}
+
+// With Review on, the first press only reads the text; the label says so, then changes once the rules are shown.
+function findLabel(state) {
+  return state.review && state.prefs.trim() && !parseIsCurrent() ? "Process constraints" : "Find a schedule";
 }
 
 function chips(state, actions) {

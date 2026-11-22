@@ -1,4 +1,4 @@
-// The header: parser label with the LLM | Offline switch, the first-run notice, Start over, Setup and the theme.
+// The header: parser label with the LLM | Offline switch, the first-run notice, Setup, Start over and the theme.
 // Also the setup dialog. The page never receives the API key: it only learns whether one is saved.
 
 import {h, icon, fill} from "./dom.js";
@@ -32,10 +32,10 @@ export function render(state, actions) {
       h("span", {}, h("strong", {}, "No LLM is set up."),
         " Setup is required to understand anything beyond basic phrases like \"no classes before 10\" or \"Fridays off\"."),
       h("button", {class: "link-btn", onclick: actions.continueOffline}, "Continue offline")),
-    h("button", {class: "btn btn-ghost", onclick: actions.startOver, title: "Clear this tab and start again"},
-      icon("restart"), "Start over"),
     h("button", {class: `btn ${needsSetup ? "btn-primary" : "btn-ghost"}`, onclick: () => openSetup(state, actions)},
       "Setup"),
+    h("button", {class: "btn btn-ghost", onclick: actions.startOver, title: "Clear this tab and start again"},
+      icon("restart"), "Start over"),
     h("button", {class: "icon-btn", "aria-label": dark ? "Switch to light mode" : "Switch to dark mode",
                  title: dark ? "Switch to light mode" : "Switch to dark mode", onclick: actions.toggleTheme},
       icon(dark ? "sun" : "moon")));

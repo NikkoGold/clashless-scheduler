@@ -41,7 +41,7 @@ Use `tests/helpers/api_client.py`: `api(provider=fake)` is a `TestClient` on `cr
 - Results stay hidden until the first solve; tabs say "every rule met" / "N preferences missed", never a cost number.
 - Course search filters by id, name, instructor while typing; clicking a course expands its groups; hovering shows a bubble after a pause.
 - Required / Pool / Off and the pick-N stepper.
-- Review on → the first Find a schedule shows chips (Hard/Soft hover explanations, compact can't be hard), the second solves; off → straight to results.
+- Review on → the button reads "Process constraints" and shows chips (Hard/Soft hover explanations, compact can't be hard), then reads "Find a schedule" and solves; editing the text turns it back to "Process constraints"; off → straight to results.
 - What wasn't understood is listed under the text box, with its advice.
 - Grid hover highlights the course and dims the others; the session list is collapsed by default.
 - Light and dark themes (violet / teal); reload keeps the tab's session; a new tab starts from the latest; Start over clears it.
