@@ -30,6 +30,7 @@ WEEKS = [DAYS, ["Mon", "Tue", "Wed", "Thu", "Fri"], ["Sun", "Mon", "Tue", "Wed",
 # constraint times needn't be on the hour, unlike session times
 TIMES = ["08:00", "09:00", "09:15", "10:00", "10:30", "11:45", "12:00", "13:30", "14:00", "16:00", "17:20", "18:00"]
 INSTRUCTORS = ["Cohen", "Levi", None]
+ROOMS = [None, "B1", "B2"]  # shown by the exports and the page; merged groups may differ in room
 
 
 def _slots(week):
@@ -60,7 +61,8 @@ def _groups(draw, week) -> list[dict]:
         slots = last if last is not None and draw(st.booleans()) else draw(_session_sets(week))
         last = slots
         texts = [f"{day} {start}-{end}" for day, start, end in slots]
-        built.append(grp(str(i + 1), *texts, instructor=draw(st.sampled_from(INSTRUCTORS))))
+        built.append(grp(str(i + 1), *texts, instructor=draw(st.sampled_from(INSTRUCTORS)),
+                         room=draw(st.sampled_from(ROOMS))))
     return built
 
 
