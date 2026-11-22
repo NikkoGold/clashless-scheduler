@@ -238,3 +238,28 @@ def test_every_combination_prints_exactly_the_valid_schedules_it_found(path, sel
         block = run.out.split(f"Schedule {i} of", 1)[1].split(f"Schedule {i + 1} of", 1)[0]
         for ch in s.choices:
             assert f"{ch.course} {ch.component} " in block
+
+
+# ---- exports: every rank of a real request, written and read back ----
+
+@pytest.mark.parametrize("argv", [
+    ["no classes before 10, keep 12-13 free"],
+    ["ideally no classes before 10, avoid Brenner, prefer OLD tutorial 12, compact schedule"],
+    ["prefer Cohen", "--no-required", "--pick", "2:" + ",".join(ELECTIVES[:4])],
+])
+def test_every_rank_exports_to_json_that_reads_back_as_a_valid_schedule(tmp_path, argv):
+    import json
+
+    from scheduler.catalog import parse_catalog
+    from scheduler.models import Schedule, parse_constraint
+    from tests.helpers.invariants import assert_valid_schedule
+
+    found = checked(cli(SAMPLE, *argv, "--offline")).outcome.result.schedules
+    assert found
+    for rank in range(1, len(found) + 1):
+        path = tmp_path / f"r{rank}.json"
+        run = checked(cli(SAMPLE, *argv, "--offline", "--export", path, "--export-rank", rank))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        schedule = Schedule.model_validate(data["schedule"])
+        assert schedule == run.outcome.result.schedules[rank - 1] == found[rank - 1]
+        assert_valid_schedule(schedule, parse_catalog(data["catalog"]), [parse_constraint(x) for x in data["constraints"]])

@@ -2,7 +2,7 @@
 // All wording about rules, parses and results comes from the server (scheduler/present.py), like the CLI.
 
 import {api, ApiError} from "./api.js";
-import {hideBubble} from "./dom.js";
+import {hideBubble, saveFile} from "./dom.js";
 import * as store from "./store.js";
 import * as header from "./header.js";
 import * as picker from "./picker.js";
@@ -15,7 +15,7 @@ const FRESH = () => ({
   prefs: "", review: true, top: 5,
   parsed: null,       // {text, offline, path_label, note, unparsed, rules: [{constraint, text}]}; rules are the chips
   phraseNote: null,   // what "Add" couldn't read
-  results: null, tab: 0, listOpen: false,
+  results: null, tab: 0, listOpen: false, exportError: null,
   offline: false, noticeDismissed: false,
 });
 
@@ -241,7 +241,22 @@ export const actions = {
   },
 
   // results
-  pickTab(i) { hideBubble(); update({tab: i}, "results"); },
+  pickTab(i) { hideBubble(); update({tab: i, exportError: null}, "results"); },
+
+  // exports: always the schedule that's open, whatever its rank
+  async exportSchedule(format) {
+    const r = state.results, i = Math.min(state.tab, r.schedules.length - 1), rank = i + 1;
+    if (format === "print") { window.print(); return; }
+    const body = {catalog: state.catalogRaw, schedule: r.result.schedules[i], best: r.result.schedules[0],
+                  constraints: r.constraints, courses: r.courses, rank};
+    try {
+      const blob = format === "xlsx" ? await api.exportXlsx(body) : await api.exportJson(body);
+      saveFile(blob, `schedule-${rank}.${format}`);
+      update({exportError: null}, "results");
+    } catch (e) {
+      update({exportError: e instanceof ApiError ? e.message : `Couldn't export: ${e.message}`}, "results");
+    }
+  },
   toggleList() { update({listOpen: !state.listOpen}, "results"); },
 };
 

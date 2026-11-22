@@ -38,6 +38,7 @@ CLI options:
 - `--verbose` lists every rule in each result, met or broken.
 - `--offline` uses the rule parser only for this run, and `--top N` sets how many schedules to show (1-20, default 5).
 - Give `-` instead of the preferences text to read it from stdin.
+- `--export out.xlsx` (or `out.json`) writes schedule 1 to a file, and `--export-rank 3` picks another one. On the page, the export bar above the grid exports whichever schedule is open, to Excel, JSON or print (save as PDF from the print dialog).
 
 Exit codes: 0 schedules found, 1 no solution (the conflicting rules are named), 2 a usage or input error.
 

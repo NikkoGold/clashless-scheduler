@@ -72,3 +72,39 @@ def test_no_courses_says_whether_the_catalog_marks_any_required():
     none_required = catalog(course("A", lecture=[grp("1", "Sun 8-10")]))
     with pytest.raises(SelectionError, match="marks no course as required"):
         select_courses(none_required, default_modes(none_required))
+
+
+# ---- the summary with full course names (the page and the exports) ----
+
+def test_the_summary_can_show_full_names_with_the_id_in_parentheses():
+    from scheduler.selection import Selection
+    s = Selection(required=["ECP"], pool=["HEP", "XBI"], n=1)
+    names = {"ECP": "Emergency Command Procedures", "HEP": "Hull Engineering", "XBI": "Xenobiology"}
+    assert s.summary(names) == ("Emergency Command Procedures (ECP) (required); "
+                                "1 of Hull Engineering (HEP), Xenobiology (XBI) (pool)")
+
+
+def test_a_name_that_is_just_the_id_isnt_repeated():
+    from scheduler.selection import Selection
+    assert Selection(required=["A"]).summary({"A": "A"}) == "A (required)"
+
+
+def test_without_names_the_summary_keeps_the_ids():
+    from scheduler.selection import Selection
+    assert Selection(required=["ECP"], pool=["HEP"], n=1).summary() == "ECP (required); 1 of HEP (pool)"
+
+
+def test_the_summary_parts_put_the_required_courses_and_the_pool_on_their_own_lines():
+    from scheduler.selection import Selection
+    s = Selection(required=["ECP"], pool=["HEP", "XBI"], n=1)
+    names = {"ECP": "Emergency Command Procedures", "HEP": "Hull Engineering", "XBI": "Xenobiology"}
+    assert s.summary_parts(names) == ["Emergency Command Procedures (ECP) (required)",
+                                      "1 of Hull Engineering (HEP), Xenobiology (XBI) (pool)"]
+    assert s.summary(names) == "; ".join(s.summary_parts(names))
+
+
+@pytest.mark.parametrize("selection, count", [({"required": ["A"]}, 1), ({"pool": ["A", "B"], "n": 1}, 1),
+                                              ({"required": ["A"], "pool": ["B"], "n": 1}, 2)])
+def test_there_is_a_part_only_for_what_was_chosen(selection, count):
+    from scheduler.selection import Selection
+    assert len(Selection(**selection).summary_parts()) == count

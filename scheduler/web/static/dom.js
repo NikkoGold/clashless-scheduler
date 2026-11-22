@@ -40,6 +40,9 @@ const PATHS = {
   check: ["M20 6 9 17l-5-5"],
   spinner: ["M21 12a9 9 0 1 1-6.219-8.56"],
   restart: ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"],
+  download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+  printer: ["M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2",
+            "M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6", "M6 14h12v8H6z"],
 };
 
 // icon("check", {class: "ok", label: "Met"}): decorative unless a label is given
@@ -73,6 +76,7 @@ export function fill(id, ...children) {
 }
 
 // 15 course hues; the theme sets saturation and lightness (pastel in light mode, deep in dark).
+// A copy of scheduler/export.py HUES (the Excel colours); tests/test_export.py checks the two match.
 export const HUES = [262, 200, 160, 32, 330, 95, 12, 285, 186, 48, 222, 138, 350, 305, 70];
 
 export function courseColours(index) {
@@ -123,4 +127,15 @@ export function hideBubble() {
   tipFor = null;
   const t = tipEl();
   if (t) t.hidden = true;
+}
+
+// ---- saving a file the server sent (exports) ----
+
+export function saveFile(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = h("a", {href: url, download: name, hidden: true});
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -1,6 +1,8 @@
 // Results: hidden until the first solve. Tabs for the top-K schedules, the weekly grid (one colour per course; hovering
 // a class highlights that course's other sessions and dims the rest), the session list (collapsed by default), and
 // every rule met or broken, what differs from schedule 1, and the notes. When nothing fits, the conflicting rules.
+// The export bar exports the schedule that's open (Excel, JSON, print). Printed: the grid on page 1; the session
+// list, rules and notes on page 2 (the list prints even when it's collapsed on screen).
 
 import {h, icon, fill, courseColours} from "./dom.js";
 
@@ -20,7 +22,7 @@ export function render(state, actions) {
   if (!schedules.length) {
     fill("results",
       h("h2", {class: "h2"}, "No schedule found"),
-      h("p", {}, `Courses: ${r.courses}`),
+      courseLine(r, {}),
       r.note && h("p", {}, r.note),
       r.timed_out && h("p", {}, "The 3-minute limit was reached before any schedule was found."),
       r.conflict.length > 0 && h("div", {class: "notice", role: "status"}, icon("alert"),
@@ -45,14 +47,17 @@ export function render(state, actions) {
       }),
       h("span", {class: "res-note"}, [r.note, r.timed_out ? "Stopped at the 3-minute limit; each result shown is the best for its place." : null]
         .filter(Boolean).join(" "))),
-    h("p", {class: "muted small"}, `Courses: ${r.courses}`),
+    courseLine(r, {class: "muted small"}),
+    exportBar(state, actions, tab + 1),
     h("div", {class: "res-body"},
       h("div", {class: "gridcard"},
         h("div", {class: "scroll"}, grid(state, schedules, s)),
         h("button", {class: "listtoggle", "aria-expanded": state.listOpen ? "true" : "false", onclick: actions.toggleList},
           icon("chevron", {cls: `chev${state.listOpen ? " up" : ""}`}),
           state.listOpen ? "Hide the list view" : "Show as a list"),
-        state.listOpen && table(s)),
+        h("div", {class: `listview${state.listOpen ? "" : " closed"}`},
+          h("h3", {class: "h2 print-only"}, `Schedule ${tab + 1}: sessions`),
+          table(s))),
       h("div", {class: "side"},
         s.differs.length > 0 && h("div", {},
           h("h3", {class: "h2"}, "Differs from schedule 1"),
@@ -65,6 +70,24 @@ export function render(state, actions) {
         s.notes.length > 0 && h("div", {},
           h("h3", {class: "h2"}, "Notes"),
           h("ul", {class: "plain muted"}, s.notes.map((n) => h("li", {}, n)))))));
+}
+
+// "Courses:" with the required courses and the pool on separate lines (results saved before course_lines existed
+// fall back to the one-line summary)
+function courseLine(r, attrs) {
+  const lines = r.course_lines || [r.courses];
+  return h("p", attrs, "Courses: ", lines.flatMap((line, i) => (i ? [h("br"), line] : [line])));
+}
+
+function exportBar(state, actions, rank) {
+  const btn = (label, ic, format, title) =>
+    h("button", {class: "btn btn-sm", title, onclick: () => actions.exportSchedule(format)}, icon(ic), label);
+  return h("div", {class: "exportbar"},
+    h("span", {class: "muted small"}, "Export this schedule:"),
+    btn("Excel", "download", "xlsx", `Schedule ${rank} as an Excel workbook: the grid, the sessions and every rule`),
+    btn("JSON", "download", "json", `Schedule ${rank} as JSON, with the catalog and rules behind it`),
+    btn("Print / PDF", "printer", "print", `Print schedule ${rank}, or save it as a PDF: the grid, then the list and rules`),
+    state.exportError && h("div", {class: "notice", role: "alert"}, icon("alert"), h("span", {}, state.exportError)));
 }
 
 function grid(state, schedules, s) {

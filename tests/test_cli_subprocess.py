@@ -38,3 +38,14 @@ def test_a_conflict_exits_one(tmp_path):
 def test_no_arguments_prints_usage_and_exits_two(tmp_path):
     done = program(tmp_path)
     assert done.returncode == 2 and "usage" in done.stderr.lower()
+
+
+@pytest.mark.slow
+def test_export_writes_the_chosen_schedule_to_a_workbook(tmp_path):
+    from openpyxl import load_workbook
+
+    done = program(tmp_path, SAMPLE, "no classes before 10, keep 12-13 free", "--offline", "--export", "out.xlsx",
+                   "--export-rank", "2")
+    assert done.returncode == 0, done.stderr
+    assert "Exported schedule 2 to out.xlsx" in done.stdout
+    assert load_workbook(tmp_path / "out.xlsx").sheetnames == ["Schedule", "Sessions", "Rules"]

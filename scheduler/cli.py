@@ -1,7 +1,7 @@
 """Command-line interface.
 
     python -m scheduler courses.json ["prefs" | -] [--review] [--verbose] [--pick [N:]IDS] [--drop IDS]
-                                     [--no-required] [--offline] [--top 5]
+                                     [--no-required] [--offline] [--top 5] [--export out.xlsx|out.json [--export-rank N]]
     python -m scheduler setup
 
 Exit codes: 0 schedules found; 1 no solution or a conflict (still reported); 2 usage, catalog or config errors.
@@ -19,6 +19,7 @@ from typing import Callable, TextIO
 from dotenv import dotenv_values
 from pydantic import ValidationError
 
+from scheduler import export
 from scheduler.catalog import CatalogError, load_catalog
 from scheduler.config import (
     DEFAULT_MODELS,
@@ -111,6 +112,16 @@ def _top(value: str) -> int:
     return k
 
 
+def _rank(value: str) -> int:
+    try:
+        k = int(value)
+    except ValueError:
+        k = None
+    if k is None or k < 1:
+        raise argparse.ArgumentTypeError(f"must be a whole number from 1 (got {value!r})")
+    return k
+
+
 def _arguments(out: TextIO, err: TextIO) -> _ArgumentParser:
     p = _ArgumentParser(
         out, err, prog="python -m scheduler",
@@ -131,6 +142,9 @@ def _arguments(out: TextIO, err: TextIO) -> _ArgumentParser:
     p.add_argument("--offline", action="store_true", help="use the rule parser only for this run (saves nothing)")
     p.add_argument("--top", type=_top, default=TOP_DEFAULT, metavar="N",
                    help=f"how many schedules to show ({TOP_MIN}-{TOP_MAX}, default {TOP_DEFAULT})")
+    p.add_argument("--export", metavar="FILE", help="write one schedule to FILE (.xlsx or .json); schedule 1 unless "
+                                                    "--export-rank says otherwise")
+    p.add_argument("--export-rank", type=_rank, metavar="N", help="which schedule --export writes (default 1)")
     return p
 
 
@@ -183,6 +197,7 @@ def _schedule(argv, console: Console, out: TextIO, err: TextIO, provider_factory
     if args.prefs == "-" and args.review:
         raise UsageError("--review reads your commands from stdin, so the preferences can't come from stdin too: "
                          "give them as text")
+    rank = _export_rank(args)
     catalog = _load(args.catalog)
     selection = _courses(catalog, args)
     courses = selection.constraints
@@ -223,8 +238,49 @@ def _schedule(argv, console: Console, out: TextIO, err: TextIO, provider_factory
     except ValueError as e:
         raise UsageError(f"can't solve this request: {e}") from None
     _print_result(result, catalog, args.verbose, out)
-    return Outcome(code=0 if result.schedules else 1, catalog=catalog, constraints=constraints, routed=routed,
-                   result=result)
+    code = 0 if result.schedules else 1
+    if args.export:
+        names = {c.id: c.name for c in catalog.courses}
+        code = _export(args.export, rank, result, catalog, constraints, selection.summary(names), out, err, code)
+    return Outcome(code=code, catalog=catalog, constraints=constraints, routed=routed, result=result)
+
+
+# ---- --export ----
+
+def _export_rank(args) -> int:
+    """Check --export and --export-rank before anything is solved; the rank to write."""
+    if args.export_rank is not None and not args.export:
+        raise UsageError("--export-rank needs --export FILE")
+    if args.export:
+        try:
+            export.format_of(args.export)
+        except export.ExportError as e:
+            raise UsageError(f"--export: {e}") from None
+    rank = args.export_rank or 1
+    if args.export and rank > args.top:
+        raise UsageError(f"--export-rank {rank} is above --top {args.top}: raise --top to at least {rank}")
+    return rank
+
+
+def _export(path: str, rank: int, result: SolveResult, catalog: Catalog, constraints: list[Constraint], courses: str,
+            out: TextIO, err: TextIO, code: int) -> int:
+    """Write the chosen schedule. The results are already printed, so failures are reported here, not raised."""
+    found = len(result.schedules)
+    if not found:
+        print("\nNothing exported: no schedule was found.", file=out)
+        return 1
+    if rank > found:
+        print(f"\nNothing exported: only {found} schedule{'s were' if found > 1 else ' was'} found, "
+              f"so there's no schedule {rank}.", file=out)
+        return 1
+    try:
+        export.write(path, catalog, result.schedules[rank - 1], rank, constraints, best=result.schedules[0],
+                     courses=courses)
+    except OSError as e:
+        print(f"Error: can't write {path}: {e.strerror or e}", file=err)
+        return 2
+    print(f"\nExported schedule {rank} to {path}", file=out)
+    return code
 
 
 def _load(path: str) -> Catalog:

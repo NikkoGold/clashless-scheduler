@@ -94,7 +94,7 @@ textarea.prefs-box:focus{border-color:var(--accent);outline:0}
 .gridcard{flex:999 1 660px;min-width:0;display:flex;flex-direction:column;gap:14px}
 .side{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:14px}
 .scroll{overflow-x:auto}
-.week{display:grid;grid-template-columns:52px repeat(6,minmax(96px,1fr));grid-template-rows:30px repeat(8,50px);min-width:640px;position:relative}
+.week{display:grid;grid-template-columns:52px repeat(6,minmax(96px,1fr));grid-template-rows:30px repeat(8,50px);min-width:640px;position:relative;border:1px solid var(--border-strong);border-radius:10px}
 .dayhead{font-size:12px;font-weight:650;color:var(--muted);text-align:center;align-self:center}
 .hour{font-size:11.5px;color:var(--muted);padding-right:8px;text-align:right;transform:translateY(-8px);font-variant-numeric:tabular-nums}
 .cell{border-top:1px solid var(--border);border-left:1px solid var(--border)}
@@ -154,4 +154,26 @@ dialog#setup::backdrop{background:rgba(10,8,20,.45)}
 .dlg-msg.warn{color:var(--warn-text);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:8px;padding:8px 10px}
 .dlg-actions{display:flex;justify-content:flex-end;gap:8px}
 .side .h2{margin-bottom:6px}
-@media print{.top,#courses,#prefs,.cols,.tabs .tag,.listtoggle{display:none !important}.card{box-shadow:none;border:0}}
+.exportbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn-sm{min-height:30px;padding:0 10px;font-size:13px}
+.listview.closed,.print-only{display:none}
+@page{margin:12mm;size:A4 portrait}
+@page grid{size:A4 landscape}
+@media print{
+/* paper is white: print the light theme even when the page is dark */
+html.dark .app{color-scheme:light;--bg:#f6f5f9;--surface:#ffffff;--surface-2:#f1eff7;--text:#18171c;--muted:#5d5a69;--border:#e2dfea;--border-strong:#c9c4d6;--accent:#6d28d9;--accent-hover:#5b21b6;--accent-press:#4c1d95;--accent-soft:#ede9fe;--accent-text:#5b21b6;--on-accent:#ffffff;--ok:#15803d;--bad:#b91c1c;--warn-bg:#fef3c7;--warn-text:#78350f;--warn-border:#ecd08a;--tip-bg:#1f1d26;--tip-text:#f6f5f9;--cb-s:80%;--cb-l:91%;--cbd-s:50%;--cbd-l:62%;--ct-s:65%;--ct-l:22%;--shadow:0 1px 2px rgba(20,16,40,.06),0 4px 16px rgba(20,16,40,.05);background:var(--bg);color:var(--text);min-height:100vh;font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;font-size:14px;line-height:1.45}
+.top,#courses,#prefs,.cols,.tabs .tag,.tabs .res-note,.tabs .tab:not(.on),.listtoggle,.exportbar{display:none !important}
+.card{box-shadow:none;border:0}
+.tabs .tab.on{border:0;background:none;font-size:18px;font-weight:700;padding-left:0}
+.res-body{display:block}
+.scroll{overflow:visible}
+.week{min-width:0;break-inside:avoid}
+/* page 1 (the title and the grid) is the landscape "grid" page; everything after it (the list, rules and notes) is on
+   the default portrait pages, with room at the top. Only page 1 is named: naming the list and the rules separately
+   made the browser start a new page between them, because their containers are unnamed. */
+.tabs,#results>p,.scroll{page:grid}
+.listview,.listview.closed{display:block !important;break-before:page;padding-top:10mm}
+.print-only{display:block}
+.side{margin-top:16px}
+.block{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}

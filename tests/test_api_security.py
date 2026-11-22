@@ -13,7 +13,8 @@ from tests.helpers.api_client import api, sample
 pytestmark = pytest.mark.usefixtures("fresh_settings")
 
 ROUTES = [("GET", "/"), ("GET", "/api/sample"), ("GET", "/api/setup"), ("POST", "/api/setup"),
-          ("POST", "/api/catalog"), ("POST", "/api/parse"), ("POST", "/api/rules"), ("POST", "/api/solve")]
+          ("POST", "/api/catalog"), ("POST", "/api/parse"), ("POST", "/api/rules"), ("POST", "/api/solve"),
+          ("POST", "/api/export/xlsx"), ("POST", "/api/export/json")]
 
 
 @pytest.mark.parametrize("host", ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8003"])

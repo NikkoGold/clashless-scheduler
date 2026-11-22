@@ -16,15 +16,16 @@ from typing import Any, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException
 
+from scheduler import export
 from scheduler.catalog import CatalogError, parse_catalog
 from scheduler.config import DEFAULT_MODELS, KEY_VARS, Config, load_config, write_setup
 from scheduler.constraints import describe
-from scheduler.models import Catalog, Constraint, parse_constraint
+from scheduler.models import Catalog, Constraint, Schedule, parse_constraint
 from scheduler.parsing.providers import Provider, make_provider
 from scheduler.parsing.router import OFFLINE_NOTE, Router
 from scheduler.present import (OFFLINE_CHOSEN_NOTE, PROVIDER_CHOICES, WEB_SETUP_HINT, for_web, group_times, parser_label, rule,
@@ -81,6 +82,16 @@ class SolveBody(BaseModel):
     top: int = Field(5, ge=TOP_MIN, le=TOP_MAX)
 
 
+class ExportBody(BaseModel):
+    """The open schedule, sent back by the page (the server keeps nothing): see plan.md, Exports."""
+    catalog: Any
+    schedule: Any  # the raw Schedule from /api/solve's result
+    best: Any = None  # schedule 1, for "differs from schedule 1"; missing means nothing differs
+    constraints: list[dict] = []  # every rule solved with, as /api/solve returned them
+    courses: str = ""
+    rank: int = Field(ge=1, le=TOP_MAX)
+
+
 class SetupBody(BaseModel):
     provider: str
     model: str | None = None
@@ -111,6 +122,31 @@ def _rules(raw: list[dict]) -> list[Constraint]:
 
 def _rule_items(constraints: list[Constraint]) -> list[dict]:
     return [{"constraint": c.model_dump(mode="json"), "text": rule(c)} for c in constraints]
+
+
+def _schedule(data, catalog: Catalog, what: str) -> Schedule:
+    if not isinstance(data, dict):
+        raise ApiError(400, f"{what}: expected a schedule from /api/solve")
+    try:
+        s = Schedule.model_validate(data)
+    except ValidationError as e:
+        raise ApiError(400, f"{what}: {_validation_text(e.errors())}") from None
+    try:
+        export.check_schedule(catalog, s)
+    except export.ExportError as e:
+        raise ApiError(400, f"{what}: {e}") from None
+    return s
+
+
+def _export_parts(body: "ExportBody"):
+    cat = _catalog(body.catalog)
+    schedule = _schedule(body.schedule, cat, "schedule")
+    best = _schedule(body.best, cat, "best") if body.best is not None else None
+    return cat, schedule, best, _rules(body.constraints)
+
+
+def _attachment(name: str) -> dict:
+    return {"Content-Disposition": f'attachment; filename="{name}"'}
 
 
 def _setup_status(config: Config) -> dict:
@@ -148,7 +184,11 @@ def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -
             content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
             if content_type != "application/json":
                 return _error(415, "Send JSON (Content-Type: application/json).")
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            # always ask before reusing a cached copy, so an updated app never runs old modules (ETags keep it cheap)
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.exception_handler(ApiError)
     async def api_error(request, e: ApiError):
@@ -256,13 +296,26 @@ def create_app(provider_factory: Callable[[Config], Provider] = make_provider) -
         return {
             "result": result.model_dump(mode="json"),
             "constraints": [c.model_dump(mode="json") for c in constraints],
-            "courses": selection.summary(),
+            "courses": selection.summary({c.id: c.name for c in cat.courses}),
+            "course_lines": selection.summary_parts({c.id: c.name for c in cat.courses}),  # the page: one per line
             "schedules": [schedule_view(s, best, cat) for s in result.schedules],
             "note": result.note,
             "timed_out": result.timed_out,
             "conflict": [describe(c) for c in result.conflict],
             "nothing_to_schedule": result.nothing_to_schedule,
         }
+
+    @app.post("/api/export/xlsx")
+    def export_xlsx(body: ExportBody):
+        cat, schedule, best, _ = _export_parts(body)
+        data = export.to_xlsx(cat, schedule, body.rank, best=best, courses=body.courses)
+        return Response(data, media_type=export.XLSX_TYPE, headers=_attachment(f"schedule-{body.rank}.xlsx"))
+
+    @app.post("/api/export/json")
+    def export_json(body: ExportBody):
+        cat, schedule, best, constraints = _export_parts(body)
+        data = export.to_json(cat, schedule, body.rank, constraints, best=best, courses=body.courses)
+        return JSONResponse(data, headers=_attachment(f"schedule-{body.rank}.json"))
 
     return app
 

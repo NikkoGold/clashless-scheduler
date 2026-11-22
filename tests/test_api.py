@@ -263,3 +263,18 @@ def test_missing_or_wrong_fields_are_a_readable_4xx(c, route, body):
 def test_malformed_json_is_a_readable_4xx(c):
     r = c.post("/api/parse", content=b"{not json", headers={"content-type": "application/json"})
     assert 400 <= r.status_code < 500 and r.json()["error"]
+
+
+def test_the_course_summary_names_each_course_with_its_id_in_parentheses():
+    c = api()
+    j = solve(c, sample(), modes={"ZGC": "off"})
+    assert j["courses"].startswith("Emergency Command Procedures (ECP), ")
+    assert "ZGC" not in j["courses"] and j["courses"].endswith(" (required)")
+
+
+def test_the_course_lines_give_the_required_courses_and_the_pool_separately():
+    c = api()
+    j = solve(c, sample(), modes={"HEP": "pool", "XBI": "pool"}, pick_n=1)
+    assert len(j["course_lines"]) == 2
+    assert j["course_lines"][0].endswith("(required)") and j["course_lines"][1].startswith("1 of ")
+    assert "; ".join(j["course_lines"]) == j["courses"]

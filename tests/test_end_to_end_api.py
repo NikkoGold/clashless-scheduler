@@ -222,3 +222,27 @@ def test_every_combination_returns_valid_schedules_with_text_for_every_choice(ca
     for view, raw in zip(j["schedules"], j["result"]["schedules"]):
         for ch in raw["choices"]:
             assert any(s["course"] == ch["course"] and s["component"] == ch["component"] for s in view["sessions"])
+
+
+# ---- exports: every rank of a real request, exported and read back ----
+
+@pytest.mark.parametrize("text, modes, pick_n", [
+    ("no classes before 10, keep 12-13 free", None, None),
+    ("ideally no classes before 10, avoid Brenner, prefer OLD tutorial 12, compact schedule", None, None),
+    ("prefer Cohen, avoid lecture 2 of XBI", {e: "pool" for e in ELECTIVES}, 2),
+])
+def test_every_rank_exports_to_json_that_reads_back_as_a_valid_schedule(c, text, modes, pick_n):
+    from scheduler.catalog import parse_catalog
+    from scheduler.models import Schedule, parse_constraint
+    from tests.helpers.invariants import assert_valid_schedule
+
+    _, j = schedule_once(c, text, modes=modes, pick_n=pick_n)
+    assert j["schedules"]
+    for rank, raw in enumerate(j["result"]["schedules"], 1):
+        body = {"catalog": SAMPLE, "schedule": raw, "best": j["result"]["schedules"][0],
+                "constraints": j["constraints"], "courses": j["courses"], "rank": rank}
+        data = ok(c.post("/api/export/json", json=body))
+        schedule = Schedule.model_validate(data["schedule"])
+        assert schedule == Schedule.model_validate(raw) and data["view"] == j["schedules"][rank - 1]
+        assert_valid_schedule(schedule, parse_catalog(data["catalog"]), [parse_constraint(x) for x in data["constraints"]])
+        assert c.post("/api/export/xlsx", json=body).status_code == 200

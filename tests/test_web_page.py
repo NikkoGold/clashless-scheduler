@@ -48,7 +48,8 @@ def test_only_api_js_talks_to_the_server():
 
 def test_every_api_route_the_page_needs_is_called():
     called = {p for _, p in api_calls()}
-    assert {"/api/sample", "/api/catalog", "/api/setup", "/api/parse", "/api/rules", "/api/solve"} <= called
+    assert {"/api/sample", "/api/catalog", "/api/setup", "/api/parse", "/api/rules", "/api/solve",
+            "/api/export/xlsx", "/api/export/json"} <= called
 
 
 def test_files_the_page_loads_exist_and_are_served():
@@ -96,3 +97,10 @@ def test_icons_are_svg_not_emoji():
     emoji = re.compile("[☀-➿\U0001f300-\U0001faff]")
     for path in [PAGE, *JS]:
         assert not emoji.search(source(path)), path.name
+
+
+@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/results.js", "/static/style.css"])
+def test_the_page_and_its_files_are_always_checked_for_a_newer_version(path):
+    # without this, a browser may keep running old modules after the app is updated (ETags keep it cheap)
+    r = api().get(path)
+    assert r.status_code == 200 and "no-cache" in r.headers.get("cache-control", "")

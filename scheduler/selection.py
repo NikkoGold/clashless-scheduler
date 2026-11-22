@@ -20,11 +20,19 @@ class Selection:
     n: int = 0  # how many to take from the pool
     constraints: list[Constraint] = field(default_factory=list)  # hard must_take per required course, then the pool
 
-    def summary(self) -> str:
-        """"ECP, OLD (required); 2 of HEP, XBI (pool)"."""
-        parts = ([f"{', '.join(self.required)} (required)"] if self.required else []) + \
-                ([f"{self.n} of {', '.join(self.pool)} (pool)"] if self.pool else [])
-        return "; ".join(parts)
+    def summary(self, names: dict[str, str] | None = None) -> str:
+        """"ECP, OLD (required); 2 of HEP, XBI (pool)". With `names` (id -> course name), each course reads
+        "Emergency Command Procedures (ECP)", as the page and the exports show it; the CLI's own line keeps the IDs."""
+        return "; ".join(self.summary_parts(names))
+
+    def summary_parts(self, names: dict[str, str] | None = None) -> list[str]:
+        """The summary's parts: the required courses, then the pool (each only if chosen). The page shows one per line."""
+        def label(course_id: str) -> str:
+            name = (names or {}).get(course_id)
+            return f"{name} ({course_id})" if name and name != course_id else course_id
+
+        return ([f"{', '.join(map(label, self.required))} (required)"] if self.required else []) + \
+               ([f"{self.n} of {', '.join(map(label, self.pool))} (pool)"] if self.pool else [])
 
 
 def default_modes(catalog: Catalog) -> dict[str, str]:
