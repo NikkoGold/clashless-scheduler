@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "scheduler"
 version = "0.1.0"
-description = "Class scheduler: plain-language preferences in, conflict-free timetables out (CP-SAT)."
+description = "Class scheduler: plain-language preferences in, clash-free timetables out (CP-SAT)."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
